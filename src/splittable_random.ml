@@ -178,19 +178,25 @@ let int state ~lo ~hi =
   let lo = Int64.of_int lo in
   let hi = Int64.of_int hi in
   (* truncate unneeded bits *)
-  Caml.Int64.to_int (int64 state ~lo ~hi)
+  Int64.to_int_trunc (int64 state ~lo ~hi)
 
 let int32 state ~lo ~hi =
   let lo = Int64.of_int32 lo in
   let hi = Int64.of_int32 hi in
   (* truncate unneeded bits *)
-  Caml.Int64.to_int32 (int64 state ~lo ~hi)
+  Int64.to_int32_trunc (int64 state ~lo ~hi)
 
 let nativeint state ~lo ~hi =
   let lo = Int64.of_nativeint lo in
   let hi = Int64.of_nativeint hi in
   (* truncate unneeded bits *)
-  Caml.Int64.to_nativeint (int64 state ~lo ~hi)
+  Int64.to_nativeint_trunc (int64 state ~lo ~hi)
+
+let int63 state ~lo ~hi =
+  let lo = Int63.to_int64 lo in
+  let hi = Int63.to_int64 hi in
+  (* truncate unneeded bits *)
+  Int63.of_int64_trunc (int64 state ~lo ~hi)
 
 let double_ulp = 2. **. -53.
 

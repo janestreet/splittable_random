@@ -46,6 +46,7 @@ val bool : State.t -> bool
     case of [float], [hi] may or may not be attainable, depending on rounding.)  *)
 val int       : State.t -> lo:int       -> hi:int       -> int
 val int32     : State.t -> lo:int32     -> hi:int32     -> int32
+val int63     : State.t -> lo:Int63.t   -> hi:Int63.t   -> Int63.t
 val int64     : State.t -> lo:int64     -> hi:int64     -> int64
 val nativeint : State.t -> lo:nativeint -> hi:nativeint -> nativeint
 val float     : State.t -> lo:float     -> hi:float     -> float
