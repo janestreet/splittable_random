@@ -10,6 +10,7 @@
     of a POPCNT primitive.
 
     (1) http://2014.splashcon.org/event/oopsla2014-fast-splittable-pseudorandom-number-generators
+        (also mirrored at http://gee.cs.oswego.edu/dl/papers/oopsla14.pdf)
 
     Beware when implementing this interface; it is easy to implement a [split] operation
     whose output is not as "independent" as it seems (2).  This bug caused problems for
