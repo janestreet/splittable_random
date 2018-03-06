@@ -10,7 +10,7 @@
     of a POPCNT primitive.
 
     (1) http://2014.splashcon.org/event/oopsla2014-fast-splittable-pseudorandom-number-generators
-        (also mirrored at http://gee.cs.oswego.edu/dl/papers/oopsla14.pdf)
+    (also mirrored at http://gee.cs.oswego.edu/dl/papers/oopsla14.pdf)
 
     Beware when implementing this interface; it is easy to implement a [split] operation
     whose output is not as "independent" as it seems (2).  This bug caused problems for
@@ -78,24 +78,23 @@ module State = struct
     t.seed <- next;
     next
 
-  let create =
-    let bits () = Int64.of_int (Random.bits ()) in
-    let initial_seed = (bits () lsl 60) lxor (bits () lsl 30) lxor (bits ()) in
-    let default_gen = ref initial_seed in
-    fun () ->
-      (* Note that the reference implementation uses getAndAdd here, which is distinct
-         from addAndGet.  The getAndAdd operation increments a mutable integer by the
-         given amount, and returns the value that it had prior to the increment. *)
-      let s = !default_gen in
-      default_gen := s + (golden_gamma * 2L);
-      { seed      = mix64 s
-      ; odd_gamma = mix_odd_gamma (s + golden_gamma)
-      }
+  let of_seed_and_gamma ~seed ~gamma =
+    let seed      = mix64         seed  in
+    let odd_gamma = mix_odd_gamma gamma in
+    { seed; odd_gamma }
+
+  let random_int64 random_state =
+    Random.State.int64_incl random_state Int64.min_value Int64.max_value
+
+  let create random_state =
+    let seed  = random_int64 random_state in
+    let gamma = random_int64 random_state in
+    of_seed_and_gamma ~seed ~gamma
 
   let split t =
-    let seed      = mix64         (next_seed t) in
-    let odd_gamma = mix_odd_gamma (next_seed t) in
-    { seed ; odd_gamma }
+    let seed  = next_seed t in
+    let gamma = next_seed t in
+    of_seed_and_gamma ~seed ~gamma
 
   let next_int64 t = mix64 (next_seed t)
 

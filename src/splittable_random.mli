@@ -20,8 +20,15 @@ open! Base
 module State : sig
   type t
 
-  (** Create a new [t] non-deterministically. *)
-  val create : unit -> t
+  (** Create a new [t] seeded from the given random state. This allows nondeterministic
+      initialization, for example in the case that the input state was created using
+      [Random.State.make_self_init].
+
+      Constructors like [create] and [of_int] should be called once at the start of a
+      randomized computation and the resulting state should be threaded through.
+      Repeatedly creating splittable random states from seeds in the middle of computation
+      can defeat the SPRNG's splittable properties. *)
+  val create : Random.State.t -> t
 
   (** Create a new [t] that will return identical results to any other [t] created with
       that integer. *)
