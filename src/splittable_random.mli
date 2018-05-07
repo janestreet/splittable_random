@@ -61,3 +61,18 @@ val float     : State.t -> lo:float     -> hi:float     -> float
 (** [unit_float state = float state ~lo:0. ~hi:1.], but slightly more efficient (and
     right endpoint is exclusive). *)
 val unit_float : State.t -> float
+
+module Log_uniform : sig
+  (** Produce a random number in the given inclusive range, where the number of bits in
+      the representation is chosen uniformly based on the given range, and then the value
+      is chosen uniformly within the range restricted to the chosen bit width. Raises if
+      [lo < 0 || hi < lo].
+
+      These functions are useful for choosing numbers that are weighted low within a given
+      range. *)
+  val int       : State.t -> lo:int       -> hi:int       -> int
+  val int32     : State.t -> lo:int32     -> hi:int32     -> int32
+  val int63     : State.t -> lo:Int63.t   -> hi:Int63.t   -> Int63.t
+  val int64     : State.t -> lo:int64     -> hi:int64     -> int64
+  val nativeint : State.t -> lo:nativeint -> hi:nativeint -> nativeint
+end

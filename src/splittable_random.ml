@@ -272,3 +272,86 @@ let float =
 let%bench_fun "unit_float_from_int64" =
   let int64 = 1L in
   fun () -> unit_float_from_int64 int64
+
+module Log_uniform = struct
+  module Make (M : sig include Int.S val uniform : State.t -> lo:t -> hi:t -> t end) : sig
+    val log_uniform : State.t -> lo:M.t -> hi:M.t -> M.t
+  end = struct
+    open M
+
+    let bits_to_represent t =
+      assert (t >= zero);
+      let t = ref t in
+      let n = ref 0 in
+      while !t > zero do
+        t := shift_right !t 1;
+        Int.incr n;
+      done;
+      !n
+
+    let%test_unit "bits_to_represent" =
+      let test n expect = [%test_result: int] (bits_to_represent n) ~expect in
+      test (M.of_int_exn 0)   0;
+      test (M.of_int_exn 1)   1;
+      test (M.of_int_exn 2)   2;
+      test (M.of_int_exn 3)   2;
+      test (M.of_int_exn 4)   3;
+      test (M.of_int_exn 5)   3;
+      test (M.of_int_exn 6)   3;
+      test (M.of_int_exn 7)   3;
+      test (M.of_int_exn 8)   4;
+      test (M.of_int_exn 100) 7;
+      test M.max_value (Int.pred M.num_bits);
+    ;;
+
+    let min_represented_by_n_bits n =
+      if Int.equal n 0
+      then zero
+      else shift_left one (Int.pred n)
+
+    let%test_unit "min_represented_by_n_bits" =
+      let test n expect = [%test_result: M.t] (min_represented_by_n_bits n) ~expect in
+      test 0 (M.of_int_exn 0);
+      test 1 (M.of_int_exn 1);
+      test 2 (M.of_int_exn 2);
+      test 3 (M.of_int_exn 4);
+      test 4 (M.of_int_exn 8);
+      test 7 (M.of_int_exn 64);
+      test (Int.pred M.num_bits) (M.shift_right_logical M.min_value 1);
+    ;;
+
+    let max_represented_by_n_bits n =
+      pred (shift_left one n)
+
+    let%test_unit "max_represented_by_n_bits" =
+      let test n expect = [%test_result: M.t] (max_represented_by_n_bits n) ~expect in
+      test 0 (M.of_int_exn 0);
+      test 1 (M.of_int_exn 1);
+      test 2 (M.of_int_exn 3);
+      test 3 (M.of_int_exn 7);
+      test 4 (M.of_int_exn 15);
+      test 7 (M.of_int_exn 127);
+      test (Int.pred M.num_bits) M.max_value;
+    ;;
+
+    let log_uniform state ~lo ~hi =
+      let min_bits = bits_to_represent lo in
+      let max_bits = bits_to_represent hi in
+      let bits = int state ~lo:min_bits ~hi:max_bits in
+      uniform state
+        ~lo:(min_represented_by_n_bits bits |> max lo)
+        ~hi:(max_represented_by_n_bits bits |> min hi)
+  end
+
+  module For_int       = Make (struct include Int       let uniform = int       end)
+  module For_int32     = Make (struct include Int32     let uniform = int32     end)
+  module For_int63     = Make (struct include Int63     let uniform = int63     end)
+  module For_int64     = Make (struct include Int64     let uniform = int64     end)
+  module For_nativeint = Make (struct include Nativeint let uniform = nativeint end)
+
+  let int       = For_int.log_uniform
+  let int32     = For_int32.log_uniform
+  let int63     = For_int63.log_uniform
+  let int64     = For_int64.log_uniform
+  let nativeint = For_nativeint.log_uniform
+end
