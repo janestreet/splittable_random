@@ -355,3 +355,4 @@ module Log_uniform = struct
   let int64     = For_int64.log_uniform
   let nativeint = For_nativeint.log_uniform
 end
+
