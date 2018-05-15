@@ -59,7 +59,13 @@ module State = struct
   let mix_odd_gamma z =
     let z = (mix64_variant13 z) lor 1L in
     let n = popcount (z lxor (z lsr 1)) in
-    if Int.( >= ) n 24
+    (* The original paper uses [>=] in the conditional immediately below; however this is
+       a typo, and we correct it by using [<]. This was fixed in response to [1] and [2].
+
+       [1] https://github.com/janestreet/splittable_random/issues/1
+       [2] http://www.pcg-random.org/posts/bugs-in-splitmix.html
+    *)
+    if Int.( < ) n 24
     then z lxor 0xaaaa_aaaa_aaaa_aaaaL
     else z
 
