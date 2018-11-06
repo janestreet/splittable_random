@@ -25,7 +25,7 @@ open  Int64.O
 
 let is_odd x = x lor 1L = x
 
-let popcount = Popcount.int64_popcount
+let popcount = Int64.popcount
 
 module State = struct
 
