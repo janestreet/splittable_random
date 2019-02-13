@@ -1,4 +1,5 @@
 opam-version: "2.0"
+version: "v0.12.0"
 maintainer: "opensource@janestreet.com"
 authors: ["Jane Street Group, LLC <opensource@janestreet.com>"]
 homepage: "https://github.com/janestreet/splittable_random"
@@ -10,12 +11,12 @@ build: [
   ["dune" "build" "-p" name "-j" jobs]
 ]
 depends: [
-  "ocaml" {>= "4.04.2"}
-  "base"
-  "ppx_assert"
-  "ppx_bench"
-  "ppx_inline_test"
-  "ppx_sexp_message"
+  "ocaml"            {>= "4.04.2"}
+  "base"             {>= "v0.12" & < "v0.13"}
+  "ppx_assert"       {>= "v0.12" & < "v0.13"}
+  "ppx_bench"        {>= "v0.12" & < "v0.13"}
+  "ppx_inline_test"  {>= "v0.12" & < "v0.13"}
+  "ppx_sexp_message" {>= "v0.12" & < "v0.13"}
   "dune"             {build & >= "1.5.1"}
 ]
 synopsis: "PRNG that can be split into independent streams"
