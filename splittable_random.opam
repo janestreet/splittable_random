@@ -16,7 +16,7 @@ depends: [
   "ppx_bench"
   "ppx_inline_test"
   "ppx_sexp_message"
-  "dune"             {>= "1.5.1"}
+  "dune"             {>= "2.0.0"}
 ]
 synopsis: "PRNG that can be split into independent streams"
 description: "
