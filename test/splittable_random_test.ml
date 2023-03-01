@@ -134,7 +134,7 @@ let%test_module "int64" =
       let z =
         test_bias_of_mean ~lo:0L ~hi ~sample_size:1000L (Splittable_random.State.of_int 0)
       in
-      assert (Caml.abs_float z < 3.)
+      assert (Stdlib.abs_float z < 3.)
 
   end)
 

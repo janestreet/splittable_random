@@ -18,6 +18,7 @@ depends: [
   "ppx_sexp_message"
   "dune"             {>= "2.0.0"}
 ]
+available: arch != "arm32" & arch != "x86_32"
 synopsis: "PRNG that can be split into independent streams"
 description: "
 PRNG that can be split into independent streams
