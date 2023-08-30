@@ -38,7 +38,7 @@ module State : sig
   val perturb : t -> int -> unit
 
   (** Create a copy of [t] that will return the same random samples as [t]. *)
-  val copy  : t -> t
+  val copy : t -> t
 
   (** [split t] produces a new state that behaves deterministically (i.e. only depending
       on the state of [t]), but pseudo-independently from [t]. This operation mutates
@@ -51,12 +51,13 @@ val bool : State.t -> bool
 
 (** Produce a random number uniformly distributed in the given inclusive range.  (In the
     case of [float], [hi] may or may not be attainable, depending on rounding.)  *)
-val int       : State.t -> lo:int       -> hi:int       -> int
-val int32     : State.t -> lo:int32     -> hi:int32     -> int32
-val int63     : State.t -> lo:Int63.t   -> hi:Int63.t   -> Int63.t
-val int64     : State.t -> lo:int64     -> hi:int64     -> int64
+val int : State.t -> lo:int -> hi:int -> int
+
+val int32 : State.t -> lo:int32 -> hi:int32 -> int32
+val int63 : State.t -> lo:Int63.t -> hi:Int63.t -> Int63.t
+val int64 : State.t -> lo:int64 -> hi:int64 -> int64
 val nativeint : State.t -> lo:nativeint -> hi:nativeint -> nativeint
-val float     : State.t -> lo:float     -> hi:float     -> float
+val float : State.t -> lo:float -> hi:float -> float
 
 (** [unit_float state = float state ~lo:0. ~hi:1.], but slightly more efficient (and
     right endpoint is exclusive). *)
@@ -70,9 +71,10 @@ module Log_uniform : sig
 
       These functions are useful for choosing numbers that are weighted low within a given
       range. *)
-  val int       : State.t -> lo:int       -> hi:int       -> int
-  val int32     : State.t -> lo:int32     -> hi:int32     -> int32
-  val int63     : State.t -> lo:Int63.t   -> hi:Int63.t   -> Int63.t
-  val int64     : State.t -> lo:int64     -> hi:int64     -> int64
+  val int : State.t -> lo:int -> hi:int -> int
+
+  val int32 : State.t -> lo:int32 -> hi:int32 -> int32
+  val int63 : State.t -> lo:Int63.t -> hi:Int63.t -> Int63.t
+  val int64 : State.t -> lo:int64 -> hi:int64 -> int64
   val nativeint : State.t -> lo:nativeint -> hi:nativeint -> nativeint
 end
