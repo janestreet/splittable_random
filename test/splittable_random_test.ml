@@ -6,7 +6,7 @@ let%expect_test "bool fairness" =
   let trial_count = 1_000 in
   let failures = ref [] in
   for seed = 1 to trial_count do
-    let state = Splittable_random.State.of_int seed in
+    let state = Splittable_random.of_int seed in
     let true_count = ref 0 in
     let false_count = ref 0 in
     for _ = 1 to 1_000 do
@@ -66,7 +66,7 @@ let%test_module "int64" =
 
     let%test_unit "bounds" =
       let open Int64.O in
-      let state = Splittable_random.State.of_int 0 in
+      let state = Splittable_random.of_int 0 in
       List.iter bounds ~f:(fun lo ->
         List.iter bounds ~f:(fun hi ->
           if lo <= hi
@@ -81,7 +81,7 @@ let%test_module "int64" =
     ;;
 
     let%test_unit "coverage" =
-      let state = Splittable_random.State.of_int 0 in
+      let state = Splittable_random.of_int 0 in
       List.iter [ 1L; 10L; 100L; 1000L ] ~f:(fun range ->
         let lo = 0L in
         let hi = Int64.pred range in
@@ -130,7 +130,7 @@ let%test_module "int64" =
       let hi = 3689348814741910528L in
       (* about 0.4 * max_int *)
       let z =
-        test_bias_of_mean ~lo:0L ~hi ~sample_size:1000L (Splittable_random.State.of_int 0)
+        test_bias_of_mean ~lo:0L ~hi ~sample_size:1000L (Splittable_random.of_int 0)
       in
       assert (Stdlib.abs_float z < 3.)
     ;;
@@ -154,7 +154,7 @@ let%test_module "float" =
 
     let%test_unit "bounds" =
       let open Float.O in
-      let state = Splittable_random.State.of_int 0 in
+      let state = Splittable_random.of_int 0 in
       List.iter bounds ~f:(fun lo ->
         List.iter bounds ~f:(fun hi ->
           if lo < hi
@@ -171,7 +171,7 @@ let%test_module "float" =
 
     let%test_unit "coverage" =
       let open Float.O in
-      let state = Splittable_random.State.of_int 0 in
+      let state = Splittable_random.of_int 0 in
       List.iter bounds ~f:(fun lo ->
         List.iter bounds ~f:(fun hi ->
           if lo < hi
@@ -204,7 +204,7 @@ let%test_module "float" =
     ;;
 
     let%expect_test "error cases" =
-      let state = Splittable_random.State.of_int 0 in
+      let state = Splittable_random.of_int 0 in
       let test lo hi =
         require_does_raise [%here] (fun () -> Splittable_random.float state ~lo ~hi)
       in

@@ -26,89 +26,89 @@ open Int64.O
 let is_odd x = x lor 1L = x
 let popcount = Int64.popcount
 
-module State = struct
-  type t =
-    { mutable seed : int64
-    ; odd_gamma : int64
-    }
+type t =
+  { mutable seed : int64
+  ; odd_gamma : int64
+  }
 
-  let golden_gamma = 0x9e37_79b9_7f4a_7c15L
-  let of_int seed = { seed = Int64.of_int seed; odd_gamma = golden_gamma }
-  let copy { seed; odd_gamma } = { seed; odd_gamma }
-  let mix_bits z n = z lxor (z lsr n)
+(* Alias used below when [t] is shadowed. *)
+type state = t
 
-  let mix64 z =
-    let z = mix_bits z 33 * 0xff51_afd7_ed55_8ccdL in
-    let z = mix_bits z 33 * 0xc4ce_b9fe_1a85_ec53L in
-    mix_bits z 33
-  ;;
+let golden_gamma = 0x9e37_79b9_7f4a_7c15L
+let of_int seed = { seed = Int64.of_int seed; odd_gamma = golden_gamma }
+let copy { seed; odd_gamma } = { seed; odd_gamma }
+let mix_bits z n = z lxor (z lsr n)
 
-  let mix64_variant13 z =
-    let z = mix_bits z 30 * 0xbf58_476d_1ce4_e5b9L in
-    let z = mix_bits z 27 * 0x94d0_49bb_1331_11ebL in
-    mix_bits z 31
-  ;;
+let mix64 z =
+  let z = mix_bits z 33 * 0xff51_afd7_ed55_8ccdL in
+  let z = mix_bits z 33 * 0xc4ce_b9fe_1a85_ec53L in
+  mix_bits z 33
+;;
 
-  let mix_odd_gamma z =
-    let z = mix64_variant13 z lor 1L in
-    let n = popcount (z lxor (z lsr 1)) in
-    (* The original paper uses [>=] in the conditional immediately below; however this is
-       a typo, and we correct it by using [<]. This was fixed in response to [1] and [2].
+let mix64_variant13 z =
+  let z = mix_bits z 30 * 0xbf58_476d_1ce4_e5b9L in
+  let z = mix_bits z 27 * 0x94d0_49bb_1331_11ebL in
+  mix_bits z 31
+;;
 
-       [1] https://github.com/janestreet/splittable_random/issues/1
-       [2] http://www.pcg-random.org/posts/bugs-in-splitmix.html
-    *)
-    if Int.( < ) n 24 then z lxor 0xaaaa_aaaa_aaaa_aaaaL else z
-  ;;
+let mix_odd_gamma z =
+  let z = mix64_variant13 z lor 1L in
+  let n = popcount (z lxor (z lsr 1)) in
+  (* The original paper uses [>=] in the conditional immediately below; however this is
+     a typo, and we correct it by using [<]. This was fixed in response to [1] and [2].
 
-  let%test_unit "odd gamma" =
-    for input = -1_000_000 to 1_000_000 do
-      let output = mix_odd_gamma (Int64.of_int input) in
-      if not (is_odd output)
-      then
-        Error.raise_s [%message "gamma value is not odd" (input : int) (output : int64)]
-    done
-  ;;
+     [1] https://github.com/janestreet/splittable_random/issues/1
+     [2] http://www.pcg-random.org/posts/bugs-in-splitmix.html
+  *)
+  if Int.( < ) n 24 then z lxor 0xaaaa_aaaa_aaaa_aaaaL else z
+;;
 
-  let next_seed t =
-    let next = t.seed + t.odd_gamma in
-    t.seed <- next;
-    next
-  ;;
+let%test_unit "odd gamma" =
+  for input = -1_000_000 to 1_000_000 do
+    let output = mix_odd_gamma (Int64.of_int input) in
+    if not (is_odd output)
+    then Error.raise_s [%message "gamma value is not odd" (input : int) (output : int64)]
+  done
+;;
 
-  let of_seed_and_gamma ~seed ~gamma =
-    let seed = mix64 seed in
-    let odd_gamma = mix_odd_gamma gamma in
-    { seed; odd_gamma }
-  ;;
+let next_seed t =
+  let next = t.seed + t.odd_gamma in
+  t.seed <- next;
+  next
+;;
 
-  let random_int64 random_state =
-    Random.State.int64_incl random_state Int64.min_value Int64.max_value
-  ;;
+let of_seed_and_gamma ~seed ~gamma =
+  let seed = mix64 seed in
+  let odd_gamma = mix_odd_gamma gamma in
+  { seed; odd_gamma }
+;;
 
-  let create random_state =
-    let seed = random_int64 random_state in
-    let gamma = random_int64 random_state in
-    of_seed_and_gamma ~seed ~gamma
-  ;;
+let random_int64 random_state =
+  Random.State.int64_incl random_state Int64.min_value Int64.max_value
+;;
 
-  let split t =
-    let seed = next_seed t in
-    let gamma = next_seed t in
-    of_seed_and_gamma ~seed ~gamma
-  ;;
+let create random_state =
+  let seed = random_int64 random_state in
+  let gamma = random_int64 random_state in
+  of_seed_and_gamma ~seed ~gamma
+;;
 
-  let next_int64 t = mix64 (next_seed t)
+let split t =
+  let seed = next_seed t in
+  let gamma = next_seed t in
+  of_seed_and_gamma ~seed ~gamma
+;;
 
-  (* [perturb] is not from any external source, but provides a way to mix in external
-     entropy with a pseudo-random state. *)
-  let perturb t salt =
-    let next = t.seed + mix64 (Int64.of_int salt) in
-    t.seed <- next
-  ;;
-end
+let next_int64 t = mix64 (next_seed t)
 
-let bool state = is_odd (State.next_int64 state)
+(* [perturb] is not from any external source, but provides a way to mix in external
+   entropy with a pseudo-random state. *)
+let perturb t salt =
+  let next = t.seed + mix64 (Int64.of_int salt) in
+  t.seed <- next
+;;
+
+let bool state = is_odd (next_int64 state)
 
 (* We abuse terminology and refer to individual values as biased or unbiased.  More
    properly, what is unbiased is the sampler that results if we keep only these "unbiased"
@@ -146,11 +146,11 @@ let%test_unit "remainder_is_unbiased" =
 let int64 =
   let open Int64.O in
   let rec between state ~lo ~hi =
-    let draw = State.next_int64 state in
+    let draw = next_int64 state in
     if lo <= draw && draw <= hi then draw else between state ~lo ~hi
   in
   let rec non_negative_up_to state maximum =
-    let draw = State.next_int64 state land Int64.max_value in
+    let draw = next_int64 state land Int64.max_value in
     let remainder = Int64.rem draw (Int64.succ maximum) in
     if remainder_is_unbiased
          ~draw
@@ -165,7 +165,7 @@ let int64 =
     then Error.raise_s [%message "int64: crossed bounds" (lo : int64) (hi : int64)];
     let diff = hi - lo in
     if diff = Int64.max_value
-    then (State.next_int64 state land Int64.max_value) + lo
+    then (next_int64 state land Int64.max_value) + lo
     else if diff >= 0L
     then non_negative_up_to state diff + lo
     else between state ~lo ~hi
@@ -223,7 +223,7 @@ let%test_unit "unit_float_from_int64" =
   assert (unit_float_from_int64 0xffff_ffff_ffff_ffffL = 1.0 -. double_ulp)
 ;;
 
-let unit_float state = unit_float_from_int64 (State.next_int64 state)
+let unit_float state = unit_float_from_int64 (next_int64 state)
 
 (* Note about roundoff error:
 
@@ -269,9 +269,9 @@ module Log_uniform = struct
   module Make (M : sig
     include Int.S
 
-    val uniform : State.t -> lo:t -> hi:t -> t
+    val uniform : state -> lo:t -> hi:t -> t
   end) : sig
-    val log_uniform : State.t -> lo:M.t -> hi:M.t -> M.t
+    val log_uniform : state -> lo:M.t -> hi:M.t -> M.t
   end = struct
     open M
 
@@ -375,4 +375,14 @@ module Log_uniform = struct
   let int63 = For_int63.log_uniform
   let int64 = For_int64.log_uniform
   let nativeint = For_nativeint.log_uniform
+end
+
+module State = struct
+  type t = state
+
+  let create = create
+  let of_int = of_int
+  let perturb = perturb
+  let copy = copy
+  let split = split
 end
