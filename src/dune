@@ -1,3 +1,6 @@
-(library (name splittable_random) (public_name splittable_random)
+(library
+ (name splittable_random)
+ (public_name splittable_random)
  (libraries base)
- (preprocess (pps ppx_assert ppx_bench ppx_inline_test ppx_sexp_message)))
+ (preprocess
+  (pps ppx_assert ppx_bench ppx_inline_test ppx_sexp_message)))
