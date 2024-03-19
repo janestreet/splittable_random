@@ -32,7 +32,8 @@ let%expect_test "bool fairness" =
      (failures ((
        (seed        573)
        (true_count  551)
-       (false_count 449))))) |}]
+       (false_count 449)))))
+    |}]
 ;;
 
 let%test_module "int64" =
@@ -214,33 +215,38 @@ let%test_module "float" =
         {|
         ("float: bounds are not finite numbers"
           (lo NAN)
-          (hi 0)) |}];
+          (hi 0))
+        |}];
       test 0. Float.nan;
       [%expect
         {|
         ("float: bounds are not finite numbers"
           (lo 0)
-          (hi NAN)) |}];
+          (hi NAN))
+        |}];
       (* infinite bounds *)
       test Float.neg_infinity 0.;
       [%expect
         {|
         ("float: bounds are not finite numbers"
           (lo -INF)
-          (hi 0)) |}];
+          (hi 0))
+        |}];
       test 0. Float.infinity;
       [%expect
         {|
         ("float: bounds are not finite numbers"
           (lo 0)
-          (hi INF)) |}];
+          (hi INF))
+        |}];
       (* crossed bounds *)
       test 2. 1.;
       [%expect
         {|
         ("float: bounds are crossed"
           (lo 2)
-          (hi 1)) |}]
+          (hi 1))
+        |}]
     ;;
   end)
 ;;
