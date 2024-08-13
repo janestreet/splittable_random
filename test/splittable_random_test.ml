@@ -25,7 +25,7 @@ let%expect_test "bool fairness" =
     Percent.of_mult (Float.of_int failure_count /. Float.of_int trial_count)
   in
   print_s [%message (failure_rate : Percent.t) (failures : Sexp.t list ref)];
-  require [%here] (Percent.( < ) failure_rate (Percent.of_percentage 1.));
+  require (Percent.( < ) failure_rate (Percent.of_percentage 1.));
   [%expect
     {|
     ((failure_rate 10bp)
@@ -207,7 +207,7 @@ let%test_module "float" =
     let%expect_test "error cases" =
       let state = Splittable_random.of_int 0 in
       let test lo hi =
-        require_does_raise [%here] (fun () -> Splittable_random.float state ~lo ~hi)
+        require_does_raise (fun () -> Splittable_random.float state ~lo ~hi)
       in
       (* NaN bounds *)
       test Float.nan 0.;

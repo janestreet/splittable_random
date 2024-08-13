@@ -267,10 +267,10 @@ let%bench_fun "unit_float_from_int64" =
 
 module Log_uniform = struct
   module Make (M : sig
-    include Int.S
+      include Int.S
 
-    val uniform : state -> lo:t -> hi:t -> t
-  end) : sig
+      val uniform : state -> lo:t -> hi:t -> t
+    end) : sig
     val log_uniform : state -> lo:M.t -> hi:M.t -> M.t
   end = struct
     open M
@@ -341,34 +341,34 @@ module Log_uniform = struct
   end
 
   module For_int = Make (struct
-    include Int
+      include Int
 
-    let uniform = int
-  end)
+      let uniform = int
+    end)
 
   module For_int32 = Make (struct
-    include Int32
+      include Int32
 
-    let uniform = int32
-  end)
+      let uniform = int32
+    end)
 
   module For_int63 = Make (struct
-    include Int63
+      include Int63
 
-    let uniform = int63
-  end)
+      let uniform = int63
+    end)
 
   module For_int64 = Make (struct
-    include Int64
+      include Int64
 
-    let uniform = int64
-  end)
+      let uniform = int64
+    end)
 
   module For_nativeint = Make (struct
-    include Nativeint
+      include Nativeint
 
-    let uniform = nativeint
-  end)
+      let uniform = nativeint
+    end)
 
   let int = For_int.log_uniform
   let int32 = For_int32.log_uniform
