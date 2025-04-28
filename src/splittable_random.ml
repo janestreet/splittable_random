@@ -1,24 +1,23 @@
 (** This module implements "Fast Splittable Pseudorandom Number Generators" by Steele et.
-    al. (1).  The paper's algorithm provides decent randomness for most purposes, but
-    sacrifices cryptographic-quality randomness in favor of performance.  The original
+    al. (1). The paper's algorithm provides decent randomness for most purposes, but
+    sacrifices cryptographic-quality randomness in favor of performance. The original
     implementation was tested with DieHarder and BigCrush; see the paper for details.
 
-    Our implementation is a port from Java to OCaml of the paper's algorithm.  Other than
-    the choice of initial seed for [create], our port should be faithful.  We have not
-    re-run the DieHarder or BigCrush tests on our implementation.  Our port is also not as
+    Our implementation is a port from Java to OCaml of the paper's algorithm. Other than
+    the choice of initial seed for [create], our port should be faithful. We have not
+    re-run the DieHarder or BigCrush tests on our implementation. Our port is also not as
     performant as the original; two factors that hurt us are boxed [int64] values and lack
     of a POPCNT primitive.
 
     (1) http://2014.splashcon.org/event/oopsla2014-fast-splittable-pseudorandom-number-generators
-    (also mirrored at http://gee.cs.oswego.edu/dl/papers/oopsla14.pdf)
+        (also mirrored at http://gee.cs.oswego.edu/dl/papers/oopsla14.pdf)
 
     Beware when implementing this interface; it is easy to implement a [split] operation
-    whose output is not as "independent" as it seems (2).  This bug caused problems for
+    whose output is not as "independent" as it seems (2). This bug caused problems for
     Haskell's Quickcheck library for a long time.
 
     (2) Schaathun, "Evaluation of splittable pseudo-random generators", JFP 2015.
-    http://www.hg.schaathun.net/research/Papers/hgs2015jfp.pdf
-*)
+    http://www.hg.schaathun.net/research/Papers/hgs2015jfp.pdf *)
 
 open! Base
 open Int64.O
@@ -37,6 +36,11 @@ type state = t
 let golden_gamma = 0x9e37_79b9_7f4a_7c15L
 let of_int seed = { seed = Int64.of_int seed; odd_gamma = golden_gamma }
 let copy { seed; odd_gamma } = { seed; odd_gamma }
+
+let copy_into_capsule { seed; odd_gamma } =
+  Capsule.Data.create (fun () -> { seed; odd_gamma })
+;;
+
 let mix_bits z n = z lxor (z lsr n)
 
 let mix64 z =
@@ -60,7 +64,7 @@ let mix_odd_gamma z =
      [1] https://github.com/janestreet/splittable_random/issues/1
      [2] http://www.pcg-random.org/posts/bugs-in-splitmix.html
   *)
-  if Int.( < ) n 24 then z lxor 0xaaaa_aaaa_aaaa_aaaaL else z
+  if Int64.( < ) n 24L then z lxor 0xaaaa_aaaa_aaaa_aaaaL else z
 ;;
 
 let%test_unit "odd gamma" =
@@ -97,6 +101,12 @@ let split t =
   let seed = next_seed t in
   let gamma = next_seed t in
   of_seed_and_gamma ~seed ~gamma
+;;
+
+let split_into_capsule t =
+  let seed = next_seed t in
+  let gamma = next_seed t in
+  Capsule.Data.create (fun () -> of_seed_and_gamma ~seed ~gamma)
 ;;
 
 let next_int64 t = mix64 (next_seed t)
@@ -267,7 +277,9 @@ let%bench_fun "unit_float_from_int64" =
 
 module Log_uniform = struct
   module Make (M : sig
-      include Int.S
+      type t
+
+      include Int.S with type t := t
 
       val uniform : state -> lo:t -> hi:t -> t
     end) : sig
