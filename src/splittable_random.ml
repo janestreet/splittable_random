@@ -38,7 +38,7 @@ let of_int seed = { seed = Int64.of_int seed; odd_gamma = golden_gamma }
 let copy { seed; odd_gamma } = { seed; odd_gamma }
 
 let copy_into_capsule { seed; odd_gamma } =
-  Capsule.Data.create (fun () -> { seed; odd_gamma })
+  Basement.Capsule.Data.create (fun () -> { seed; odd_gamma })
 ;;
 
 let mix_bits z n = z lxor (z lsr n)
@@ -106,7 +106,7 @@ let split t =
 let split_into_capsule t =
   let seed = next_seed t in
   let gamma = next_seed t in
-  Capsule.Data.create (fun () -> of_seed_and_gamma ~seed ~gamma)
+  Basement.Capsule.Data.create (fun () -> of_seed_and_gamma ~seed ~gamma)
 ;;
 
 let next_int64 t = mix64 (next_seed t)
