@@ -19,11 +19,17 @@
     (2) Schaathun, "Evaluation of splittable pseudo-random generators", JFP 2015.
     http://www.hg.schaathun.net/research/Papers/hgs2015jfp.pdf *)
 
+[@@@ocaml.flambda_o3]
+
 open! Base
+
+external box : int64 -> int64 = "%identity"
+external unbox : int64 -> int64 = "%identity"
+
 open Int64.O
 
 let is_odd x = x lor 1L = x
-let popcount = Int64.popcount
+let popcount x = Int64.popcount x
 
 type t =
   { mutable seed : int64
@@ -34,16 +40,16 @@ type t =
 type state = t
 
 let golden_gamma = 0x9e37_79b9_7f4a_7c15L
-let of_int seed = { seed = Int64.of_int seed; odd_gamma = golden_gamma }
+let of_int seed = { seed = unbox (Int64.of_int seed); odd_gamma = unbox golden_gamma }
 let copy { seed; odd_gamma } = { seed; odd_gamma }
 
 let copy_into_capsule { seed; odd_gamma } =
   Basement.Capsule.Data.create (fun () -> { seed; odd_gamma })
 ;;
 
-let mix_bits z n = z lxor (z lsr n)
+let[@inline] mix_bits z n = z lxor (z lsr n)
 
-let mix64 z =
+let[@inline] mix64 z =
   let z = mix_bits z 33 * 0xff51_afd7_ed55_8ccdL in
   let z = mix_bits z 33 * 0xc4ce_b9fe_1a85_ec53L in
   mix_bits z 33
@@ -64,7 +70,7 @@ let mix_odd_gamma z =
      [1] https://github.com/janestreet/splittable_random/issues/1
      [2] http://www.pcg-random.org/posts/bugs-in-splitmix.html
   *)
-  if Int64.( < ) n 24L then z lxor 0xaaaa_aaaa_aaaa_aaaaL else z
+  if n < 24L then z lxor 0xaaaa_aaaa_aaaa_aaaaL else z
 ;;
 
 let%test_unit "odd gamma" =
@@ -76,15 +82,15 @@ let%test_unit "odd gamma" =
 ;;
 
 let next_seed t =
-  let next = t.seed + t.odd_gamma in
-  t.seed <- next;
+  let next = box t.seed + box t.odd_gamma in
+  t.seed <- unbox next;
   next
 ;;
 
 let of_seed_and_gamma ~seed ~gamma =
   let seed = mix64 seed in
   let odd_gamma = mix_odd_gamma gamma in
-  { seed; odd_gamma }
+  { seed = unbox seed; odd_gamma = unbox odd_gamma }
 ;;
 
 let random_int64 random_state =
@@ -114,8 +120,8 @@ let next_int64 t = mix64 (next_seed t)
 (* [perturb] is not from any external source, but provides a way to mix in external
    entropy with a pseudo-random state. *)
 let perturb t salt =
-  let next = t.seed + mix64 (Int64.of_int salt) in
-  t.seed <- next
+  let next = box t.seed + mix64 (Int64.of_int salt) in
+  t.seed <- unbox next
 ;;
 
 let bool state = is_odd (next_int64 state)
@@ -124,7 +130,6 @@ let bool state = is_odd (next_int64 state)
    properly, what is unbiased is the sampler that results if we keep only these "unbiased"
    values. *)
 let remainder_is_unbiased ~draw ~remainder ~draw_maximum ~remainder_maximum =
-  let open Int64.O in
   draw - remainder <= draw_maximum - remainder_maximum
 ;;
 
@@ -154,7 +159,6 @@ let%test_unit "remainder_is_unbiased" =
    OCaml standard library.  The purpose is to use the minimum number of calls to
    [next_int64] to produce a number uniformly chosen within the given range. *)
 let int64 =
-  let open Int64.O in
   let rec between state ~lo ~hi =
     let draw = next_int64 state in
     if lo <= draw && draw <= hi then draw else between state ~lo ~hi
@@ -230,7 +234,7 @@ let%test_unit "unit_float_from_int64" =
   let open Float.O in
   assert (unit_float_from_int64 0x0000_0000_0000_0000L = 0.);
   assert (unit_float_from_int64 0xffff_ffff_ffff_ffffL < 1.0);
-  assert (unit_float_from_int64 0xffff_ffff_ffff_ffffL = 1.0 -. double_ulp)
+  assert (unit_float_from_int64 0xffff_ffff_ffff_ffffL = 1.0 - double_ulp)
 ;;
 
 let unit_float state = unit_float_from_int64 (next_int64 state)
@@ -310,7 +314,7 @@ module Log_uniform = struct
       test (M.of_int_exn 7) 3;
       test (M.of_int_exn 8) 4;
       test (M.of_int_exn 100) 7;
-      test M.max_value (Int.pred M.num_bits)
+      test M.max_value (M.pred M.num_bits |> M.to_int_exn)
     ;;
 
     let min_represented_by_n_bits n =
@@ -325,7 +329,7 @@ module Log_uniform = struct
       test 3 (M.of_int_exn 4);
       test 4 (M.of_int_exn 8);
       test 7 (M.of_int_exn 64);
-      test (Int.pred M.num_bits) (M.shift_right_logical M.min_value 1)
+      test (M.pred M.num_bits |> M.to_int_exn) (M.shift_right_logical M.min_value 1)
     ;;
 
     let max_represented_by_n_bits n = pred (shift_left one n)
@@ -338,7 +342,7 @@ module Log_uniform = struct
       test 3 (M.of_int_exn 7);
       test 4 (M.of_int_exn 15);
       test 7 (M.of_int_exn 127);
-      test (Int.pred M.num_bits) M.max_value
+      test (M.pred M.num_bits |> M.to_int_exn) M.max_value
     ;;
 
     let log_uniform state ~lo ~hi =
