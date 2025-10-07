@@ -41,7 +41,7 @@ val perturb : t -> int -> unit
 val copy : t @ shared -> t
 
 (** Like [copy], but puts the result in an arbitrary capsule. *)
-val copy_into_capsule : t @ shared -> (t, 'k) Capsule.Data.t
+val copy_into_capsule : t @ shared -> (t, 'k) Basement.Capsule.Data.t
 
 (** [split t] produces a new state that behaves deterministically (i.e. only depending on
     the state of [t]), but pseudo-independently from [t]. This operation mutates [t],
@@ -49,7 +49,7 @@ val copy_into_capsule : t @ shared -> (t, 'k) Capsule.Data.t
 val split : t -> t
 
 (** Like [split], but puts the result into an arbitrary capsule. *)
-val split_into_capsule : t -> (t, 'k) Capsule.Data.t
+val split_into_capsule : t -> (t, 'k) Basement.Capsule.Data.t
 
 (** Legacy aliases for the preceding definitions. *)
 module State : sig
