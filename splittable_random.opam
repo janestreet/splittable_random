@@ -12,6 +12,7 @@ build: [
 depends: [
   "ocaml" {>= "5.1.0"}
   "base"
+  "capsule0"
   "ppx_assert"
   "ppx_bench"
   "ppx_inline_test"

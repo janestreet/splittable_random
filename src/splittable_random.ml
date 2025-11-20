@@ -44,7 +44,7 @@ let of_int seed = { seed = unbox (Int64.of_int seed); odd_gamma = unbox golden_g
 let copy { seed; odd_gamma } = { seed; odd_gamma }
 
 let copy_into_capsule { seed; odd_gamma } =
-  Basement.Capsule.Data.create (fun () -> { seed; odd_gamma })
+  Capsule_expert.Data.create (fun () -> { seed; odd_gamma })
 ;;
 
 let[@inline] mix_bits z n = z lxor (z lsr n)
@@ -64,8 +64,8 @@ let mix64_variant13 z =
 let mix_odd_gamma z =
   let z = mix64_variant13 z lor 1L in
   let n = popcount (z lxor (z lsr 1)) in
-  (* The original paper uses [>=] in the conditional immediately below; however this is
-     a typo, and we correct it by using [<]. This was fixed in response to [1] and [2].
+  (* The original paper uses [>=] in the conditional immediately below; however this is a
+     typo, and we correct it by using [<]. This was fixed in response to [1] and [2].
 
      [1] https://github.com/janestreet/splittable_random/issues/1
      [2] http://www.pcg-random.org/posts/bugs-in-splitmix.html
@@ -112,7 +112,7 @@ let split t =
 let split_into_capsule t =
   let seed = next_seed t in
   let gamma = next_seed t in
-  Basement.Capsule.Data.create (fun () -> of_seed_and_gamma ~seed ~gamma)
+  Capsule_expert.Data.create (fun () -> of_seed_and_gamma ~seed ~gamma)
 ;;
 
 let next_int64 t = mix64 (next_seed t)
@@ -126,7 +126,7 @@ let perturb t salt =
 
 let bool state = is_odd (next_int64 state)
 
-(* We abuse terminology and refer to individual values as biased or unbiased.  More
+(* We abuse terminology and refer to individual values as biased or unbiased. More
    properly, what is unbiased is the sampler that results if we keep only these "unbiased"
    values. *)
 let remainder_is_unbiased ~draw ~remainder ~draw_maximum ~remainder_maximum =
@@ -156,7 +156,7 @@ let%test_unit "remainder_is_unbiased" =
 ;;
 
 (* This implementation of bounded randomness is adapted from [Random.State.int*] in the
-   OCaml standard library.  The purpose is to use the minimum number of calls to
+   OCaml standard library. The purpose is to use the minimum number of calls to
    [next_int64] to produce a number uniformly chosen within the given range. *)
 let int64 =
   let rec between state ~lo ~hi =
@@ -243,7 +243,7 @@ let unit_float state = unit_float_from_int64 (next_int64 state)
 
    Although [float state ~lo ~hi] is nominally inclusive of endpoints, we are relying on
    the fact that [unit_float] never returns 1., because there are pairs [(lo,hi)] for
-   which [lo +. 1. *. (hi -. lo) > hi].  There are also pairs [(lo,hi)] and values of [x]
+   which [lo +. 1. *. (hi -. lo) > hi]. There are also pairs [(lo,hi)] and values of [x]
    with [x < 1.] such that [lo +. x *. (hi -. lo) = hi], so it would not be correct to
    document this as being exclusive of [hi].
 *)
@@ -257,11 +257,12 @@ let float =
          opposite signs. *)
       let mid = (hi +. lo) /. 2. in
       if bool state
-         (* Depending on rounding, the recursion with [~hi:mid] might be inclusive of [mid],
-         which would mean the two cases overlap on [mid]. The alternative is to increment
-         or decrement [mid] using [one_ulp] in either of the calls, but then if the first
-         case is exclusive we leave a "gap" between the two ranges. There's no perfectly
-         uniform solution, so we use the simpler code that does not call [one_ulp]. *)
+         (* Depending on rounding, the recursion with [~hi:mid] might be inclusive of
+            [mid], which would mean the two cases overlap on [mid]. The alternative is to
+            increment or decrement [mid] using [one_ulp] in either of the calls, but then
+            if the first case is exclusive we leave a "gap" between the two ranges.
+            There's no perfectly uniform solution, so we use the simpler code that does
+            not call [one_ulp]. *)
       then finite_float state ~lo ~hi:mid
       else finite_float state ~lo:mid ~hi)
   in
