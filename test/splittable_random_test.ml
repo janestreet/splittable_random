@@ -100,8 +100,7 @@ module%test [@name "int64"] _ = struct
       done)
   ;;
 
-  (* This should return values with mean 0 and variance 1 if implementation
-       is correct. *)
+  (* This should return values with mean 0 and variance 1 if implementation is correct. *)
   let test_bias_of_mean ~lo ~hi ~sample_size state =
     let open Int64.O in
     assert (lo < hi);
@@ -118,7 +117,7 @@ module%test [@name "int64"] _ = struct
     let mean = sum /. Int64.to_float sample_size in
     let n = delta +. 1. in
     (* We have n evenly spaced values from 0 to 1 inclusive, each with probability 1/n.
-         This has variance (n+1)/(12(n-1)) per draw.  *)
+       This has variance (n+1)/(12(n-1)) per draw. *)
     let standard_error =
       Float.sqrt ((n +. 1.) /. (12. *. (n -. 1.) *. Int64.to_float sample_size))
     in
