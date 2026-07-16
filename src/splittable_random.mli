@@ -50,6 +50,47 @@ val split : t -> t
 val split_into_capsule : t -> (t, 'k) Capsule_prim.Data.t
 
 (** Legacy aliases for the preceding definitions. *)
+(** Interception hooks for property-testing engines that need to observe,
+    record, or replay the stream of bounded draws (for example, choice-tape
+    shrinkers in the style of Python Hypothesis's Conjecture engine).
+
+    A state carrying hooks consults them on each draw, passing the default
+    sampler so the hook can fall back to ordinary sampling; states without
+    hooks (the default, and everything this module constructs itself) behave
+    exactly as before, at the cost of one branch per draw. All bounded
+    integer draws ([int], [int32], [int63], [nativeint], and [Log_uniform])
+    delegate to [int64], so the [int64] hook observes every one of them with
+    its bounds. *)
+module Intercept : sig
+  type state := t
+
+  type t =
+    { int64 :
+        state
+        -> lo:int64
+        -> hi:int64
+        -> default:(state -> lo:int64 -> hi:int64 -> int64)
+        -> int64
+    ; float :
+        state
+        -> lo:float
+        -> hi:float
+        -> default:(state -> lo:float -> hi:float -> float)
+        -> float
+    ; unit_float : state -> default:(state -> float) -> float
+    ; bool : state -> default:(state -> bool) -> bool
+    ; on_split : unit -> unit
+    ; on_perturb : unit -> unit
+    }
+end
+
+(** [with_intercept t hooks] is a state sharing [t]'s underlying PRNG whose
+    draws consult [hooks]. [copy] preserves hooks; [split] produces
+    hook-free states (after calling [on_split], so an observer can keep its
+    record aligned); [perturb] calls [on_perturb] before mixing in the
+    salt. *)
+val with_intercept : t -> Intercept.t -> t
+
 module State : sig
   type nonrec t = t
 
