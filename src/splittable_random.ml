@@ -34,7 +34,7 @@ let popcount x = Int64.popcount x
 type t =
   { mutable seed : int64
   ; odd_gamma : int64
-  ; intercept : intercept option
+  ; mutable intercept : intercept option
   }
 
 (* Interception hooks for property-testing engines (see the [Intercept]
@@ -46,8 +46,8 @@ and intercept =
       t -> lo:float -> hi:float -> default:(t -> lo:float -> hi:float -> float) -> float
   ; unit_float : t -> default:(t -> float) -> float
   ; bool : t -> default:(t -> bool) -> bool
-  ; on_split : unit -> unit
-  ; on_perturb : unit -> unit
+  ; on_split : unit -> intercept option
+  ; on_perturb : int -> intercept option
   }
 
 (* Alias used below when [t] is shadowed. *)
@@ -126,12 +126,16 @@ let create random_state =
 ;;
 
 let split t =
-  (match t.intercept with
-   | None -> ()
-   | Some i -> i.on_split ());
+  let intercept =
+    match t.intercept with
+    | None -> None
+    | Some i -> i.on_split ()
+  in
   let seed = next_seed t in
   let gamma = next_seed t in
-  of_seed_and_gamma ~seed ~gamma
+  let child = of_seed_and_gamma ~seed ~gamma in
+  child.intercept <- intercept;
+  child
 ;;
 
 (* Advances [t] exactly like [split], so observers get the same
@@ -141,7 +145,7 @@ let split t =
 let split_into_capsule t =
   (match t.intercept with
    | None -> ()
-   | Some i -> i.on_split ());
+   | Some i -> ignore (i.on_split () : intercept option));
   let seed = unbox (mix64 (next_seed t)) in
   let odd_gamma = unbox (mix_odd_gamma (next_seed t)) in
   Capsule_prim.Data.create (fun () -> { seed; odd_gamma; intercept = None })
@@ -154,7 +158,10 @@ let next_int64 t = mix64 (next_seed t)
 let perturb t salt =
   (match t.intercept with
    | None -> ()
-   | Some i -> i.on_perturb ());
+   | Some i ->
+     (match i.on_perturb salt with
+      | None -> ()
+      | Some intercept -> t.intercept <- Some intercept));
   let next = box t.seed + mix64 (Int64.of_int salt) in
   t.seed <- unbox next
 ;;
@@ -475,9 +482,21 @@ module Intercept = struct
         -> float
     ; unit_float : state -> default:(state -> float) -> float
     ; bool : state -> default:(state -> bool) -> bool
-    ; on_split : unit -> unit
-    ; on_perturb : unit -> unit
+    ; on_split : unit -> t option
+    ; on_perturb : int -> t option
     }
+
+  let create
+    ?(int64 = fun state ~lo ~hi ~default -> default state ~lo ~hi)
+    ?(float = fun state ~lo ~hi ~default -> default state ~lo ~hi)
+    ?(unit_float = fun state ~default -> default state)
+    ?(bool = fun state ~default -> default state)
+    ?(on_split = fun () -> None)
+    ?(on_perturb = fun _ -> None)
+    ()
+    =
+    { int64; float; unit_float; bool; on_split; on_perturb }
+  ;;
 end
 
 let with_intercept t intercept = { t with intercept = Some intercept }
@@ -486,16 +505,12 @@ let%test_unit "intercept observes every bounded draw with its bounds, and the \
                derived draws delegate through [int64]" =
   let observed = ref [] in
   let intercept : Intercept.t =
-    { int64 =
+    Intercept.create
+      ~int64:
         (fun state ~lo ~hi ~default ->
           observed := (lo, hi) :: !observed;
           default state ~lo ~hi)
-    ; float = (fun state ~lo ~hi ~default -> default state ~lo ~hi)
-    ; unit_float = (fun state ~default -> default state)
-    ; bool = (fun state ~default -> default state)
-    ; on_split = (fun () -> ())
-    ; on_perturb = (fun () -> ())
-    }
+      ()
   in
   let state = with_intercept (of_int 1) intercept in
   let (_ : int) = int state ~lo:3 ~hi:17 in
@@ -505,38 +520,60 @@ let%test_unit "intercept observes every bounded draw with its bounds, and the \
 
 let%test_unit "intercept can force replayed values through the public API" =
   let intercept : Intercept.t =
-    { int64 = (fun _ ~lo ~hi:_ ~default:_ -> lo)
-    ; float = (fun _ ~lo ~hi:_ ~default:_ -> lo)
-    ; unit_float = (fun _ ~default:_ -> 0.)
-    ; bool = (fun _ ~default:_ -> false)
-    ; on_split = (fun () -> ())
-    ; on_perturb = (fun () -> ())
-    }
+    Intercept.create
+      ~int64:(fun _ ~lo ~hi:_ ~default:_ -> lo)
+      ~float:(fun _ ~lo ~hi:_ ~default:_ -> lo)
+      ~unit_float:(fun _ ~default:_ -> 0.)
+      ~bool:(fun _ ~default:_ -> false)
+      ()
   in
   let state = with_intercept (of_int 1) intercept in
   [%test_result: int] (int state ~lo:42 ~hi:1000) ~expect:42;
   [%test_result: bool] (bool state) ~expect:false
 ;;
 
-let%test_unit "split-off states are hook-free and notify on_split" =
+let%test_unit "split-off states receive the observer returned by on_split" =
   let splits = ref 0 in
-  let intercept : Intercept.t =
-    { int64 = (fun _ ~lo ~hi:_ ~default:_ -> lo)
-    ; float = (fun _ ~lo ~hi:_ ~default:_ -> lo)
-    ; unit_float = (fun _ ~default:_ -> 0.)
-    ; bool = (fun _ ~default:_ -> false)
-    ; on_split = (fun () -> Int.incr splits)
-    ; on_perturb = (fun () -> ())
-    }
+  let rec make_intercept () : Intercept.t =
+    Intercept.create
+      ~int64:(fun _ ~lo ~hi:_ ~default:_ -> lo)
+      ~on_split:(fun () ->
+        Int.incr splits;
+        Some (make_intercept ()))
+      ()
   in
+  let intercept = make_intercept () in
   let state = with_intercept (of_int 1) intercept in
   let child = split state in
   [%test_result: int] !splits ~expect:1;
+  for _ = 1 to 100 do
+    [%test_result: int] (int child ~lo:7 ~hi:1_000_000) ~expect:7
+  done;
+  let unobserved_child = split (with_intercept (of_int 1) (Intercept.create ())) in
   let all_forced = ref true in
   for _ = 1 to 100 do
-    if Int.( <> ) (int child ~lo:7 ~hi:1_000_000) 7 then all_forced := false
+    if Int.( <> ) (int unobserved_child ~lo:7 ~hi:1_000_000) 7
+    then all_forced := false
   done;
   [%test_result: bool] !all_forced ~expect:false
+;;
+
+let%test_unit "perturb passes the salt and can replace the observer" =
+  let salts = ref [] in
+  let replacement =
+    Intercept.create ~int64:(fun _ ~lo:_ ~hi ~default:_ -> hi) ()
+  in
+  let initial =
+    Intercept.create
+      ~on_perturb:(fun salt ->
+        salts := salt :: !salts;
+        Some replacement)
+      ()
+  in
+  let state = with_intercept (of_int 1) initial in
+  perturb state 42;
+  [%test_result: int list] !salts ~expect:[ 42 ];
+  [%test_result: int] (int state ~lo:7 ~hi:99) ~expect:99
 ;;
 
 module State = struct

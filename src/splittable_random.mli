@@ -64,31 +64,38 @@ val split_into_capsule : t -> (t, 'k) Capsule_prim.Data.t
 module Intercept : sig
   type state := t
 
-  type t =
-    { int64 :
-        state
-        -> lo:int64
-        -> hi:int64
-        -> default:(state -> lo:int64 -> hi:int64 -> int64)
-        -> int64
-    ; float :
-        state
-        -> lo:float
-        -> hi:float
-        -> default:(state -> lo:float -> hi:float -> float)
-        -> float
-    ; unit_float : state -> default:(state -> float) -> float
-    ; bool : state -> default:(state -> bool) -> bool
-    ; on_split : unit -> unit
-    ; on_perturb : unit -> unit
-    }
+  type t
+
+  (** Constructs an interceptor whose omitted primitive callbacks delegate to
+      their defaults. Omitted [on_split] leaves child states unobserved;
+      omitted [on_perturb] retains the current interceptor. *)
+  val create
+    :  ?int64:
+         (state
+          -> lo:int64
+          -> hi:int64
+          -> default:(state -> lo:int64 -> hi:int64 -> int64)
+          -> int64)
+    -> ?float:
+         (state
+          -> lo:float
+          -> hi:float
+          -> default:(state -> lo:float -> hi:float -> float)
+          -> float)
+    -> ?unit_float:(state -> default:(state -> float) -> float)
+    -> ?bool:(state -> default:(state -> bool) -> bool)
+    -> ?on_split:(unit -> t option)
+    -> ?on_perturb:(int -> t option)
+    -> unit
+    -> t
 end
 
-(** [with_intercept t hooks] is a state sharing [t]'s underlying PRNG whose
-    draws consult [hooks]. [copy] preserves hooks; [split] produces
-    hook-free states (after calling [on_split], so an observer can keep its
-    record aligned); [perturb] calls [on_perturb] before mixing in the
-    salt. *)
+(** [with_intercept t hooks] returns a snapshot copy of [t] whose draws consult
+    [hooks]; [t] itself is unchanged. [copy] preserves hooks; [split] installs
+    the hooks returned by [on_split] on the new child; [perturb] passes its salt
+    to [on_perturb] and installs any returned replacement hooks. Capsule copies
+    and split children remain hook-free because closures cannot cross capsule
+    boundaries. *)
 val with_intercept : t -> Intercept.t -> t
 
 module State : sig
