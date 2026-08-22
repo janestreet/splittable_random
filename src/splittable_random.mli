@@ -49,7 +49,6 @@ val split : t -> t
 (** Like [split], but puts the result into an arbitrary capsule. *)
 val split_into_capsule : t -> (t, 'k) Capsule_prim.Data.t
 
-(** Legacy aliases for the preceding definitions. *)
 (** Interception hooks for property-testing engines that need to observe,
     record, or replay the stream of bounded draws (for example, choice-tape
     shrinkers in the style of Python Hypothesis's Conjecture engine).
@@ -98,6 +97,7 @@ end
     boundaries. *)
 val with_intercept : t -> Intercept.t -> t
 
+(** Legacy aliases for the preceding state operations. *)
 module State : sig
   type nonrec t = t
 
