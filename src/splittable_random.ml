@@ -234,6 +234,11 @@ let int64_default =
 ;;
 
 let int64 state ~lo ~hi =
+  (* Hooks observe valid draws; installing one must not change the public
+     error contract for invalid ranges. [int64_default] keeps the same check
+     for direct delegation through the callback. *)
+  if lo > hi
+  then Error.raise_s [%message "int64: crossed bounds" (lo : int64) (hi : int64)];
   match state.intercept with
   | None -> int64_default state ~lo ~hi
   | Some i -> i.int64 state ~lo ~hi ~default:int64_default
@@ -340,6 +345,14 @@ let float_default =
 ;;
 
 let float state ~lo ~hi =
+  (* Validate before dispatch for the same reason as [int64]: a callback may
+     choose not to call [default], but it must not make an invalid public draw
+     succeed. *)
+  if not (Float.is_finite lo && Float.is_finite hi)
+  then
+    raise_s [%message "float: bounds are not finite numbers" (lo : float) (hi : float)];
+  if Float.( > ) lo hi
+  then raise_s [%message "float: bounds are crossed" (lo : float) (hi : float)];
   match state.intercept with
   | None -> float_default state ~lo ~hi
   | Some i -> i.float state ~lo ~hi ~default:float_default
@@ -530,6 +543,32 @@ let%test_unit "intercept can force replayed values through the public API" =
   let state = with_intercept (of_int 1) intercept in
   [%test_result: int] (int state ~lo:42 ~hi:1000) ~expect:42;
   [%test_result: bool] (bool state) ~expect:false
+;;
+
+let%test_unit "intercept preserves invalid-bound errors" =
+  let called = ref false in
+  let intercept : Intercept.t =
+    Intercept.create
+      ~int64:(fun _ ~lo ~hi:_ ~default:_ ->
+        called := true;
+        lo)
+      ~float:(fun _ ~lo ~hi:_ ~default:_ ->
+        called := true;
+        lo)
+      ()
+  in
+  let state = with_intercept (of_int 1) intercept in
+  let raises f = match f () with _ -> false | exception _ -> true in
+  [%test_result: bool]
+    (raises (fun () -> int64 state ~lo:1L ~hi:0L))
+    ~expect:true;
+  [%test_result: bool]
+    (raises (fun () -> float state ~lo:1. ~hi:0.))
+    ~expect:true;
+  [%test_result: bool]
+    (raises (fun () -> float state ~lo:0. ~hi:Float.infinity))
+    ~expect:true;
+  [%test_result: bool] !called ~expect:false
 ;;
 
 let%test_unit "split-off states receive the observer returned by on_split" =
