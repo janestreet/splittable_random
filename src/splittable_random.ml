@@ -34,17 +34,39 @@ let popcount x = Int64.popcount x
 type t =
   { mutable seed : int64
   ; odd_gamma : int64
+  ; mutable intercept : intercept option
+  }
+
+(* Interception hooks for property-testing engines (see the [Intercept]
+   module below). [None] is the default and costs one branch per draw. *)
+and intercept =
+  { int64 :
+      t -> lo:int64 -> hi:int64 -> default:(t -> lo:int64 -> hi:int64 -> int64) -> int64
+  ; float :
+      t -> lo:float -> hi:float -> default:(t -> lo:float -> hi:float -> float) -> float
+  ; unit_float : t -> default:(t -> float) -> float
+  ; bool : t -> default:(t -> bool) -> bool
+  ; on_split : unit -> intercept option
+  ; on_perturb : int -> intercept option
   }
 
 (* Alias used below when [t] is shadowed. *)
 type state = t
 
 let golden_gamma = 0x9e37_79b9_7f4a_7c15L
-let of_int seed = { seed = unbox (Int64.of_int seed); odd_gamma = unbox golden_gamma }
-let copy { seed; odd_gamma } = { seed; odd_gamma }
+let of_int seed =
+  { seed = unbox (Int64.of_int seed); odd_gamma = unbox golden_gamma; intercept = None }
+;;
 
-let copy_into_capsule { seed; odd_gamma } =
-  Capsule_prim.Data.create (fun () -> { seed; odd_gamma })
+let copy { seed; odd_gamma; intercept } = { seed; odd_gamma; intercept }
+
+(* Hooks are ordinary closures, so they cannot cross a capsule boundary:
+   the copy in the capsule is hook-free, and the closure below captures
+   only immediates. *)
+let copy_into_capsule t =
+  let seed = t.seed
+  and odd_gamma = t.odd_gamma in
+  Capsule_prim.Data.create (fun () -> { seed; odd_gamma; intercept = None })
 ;;
 
 let[@inline] mix_bits z n = z lxor (z lsr n)
@@ -90,7 +112,7 @@ let next_seed t =
 let of_seed_and_gamma ~seed ~gamma =
   let seed = mix64 seed in
   let odd_gamma = mix_odd_gamma gamma in
-  { seed = unbox seed; odd_gamma = unbox odd_gamma }
+  { seed = unbox seed; odd_gamma = unbox odd_gamma; intercept = None }
 ;;
 
 let random_int64 random_state =
@@ -104,15 +126,29 @@ let create random_state =
 ;;
 
 let split t =
+  let intercept =
+    match t.intercept with
+    | None -> None
+    | Some i -> i.on_split ()
+  in
   let seed = next_seed t in
   let gamma = next_seed t in
-  of_seed_and_gamma ~seed ~gamma
+  let child = of_seed_and_gamma ~seed ~gamma in
+  child.intercept <- intercept;
+  child
 ;;
 
+(* Advances [t] exactly like [split], so observers get the same
+   notification. The state in the capsule is hook-free, like every state
+   this module constructs, and the mixing happens before capsule
+   creation so the closure below captures only immediates. *)
 let split_into_capsule t =
-  let seed = next_seed t in
-  let gamma = next_seed t in
-  Capsule_prim.Data.create (fun () -> of_seed_and_gamma ~seed ~gamma)
+  (match t.intercept with
+   | None -> ()
+   | Some i -> ignore (i.on_split () : intercept option));
+  let seed = unbox (mix64 (next_seed t)) in
+  let odd_gamma = unbox (mix_odd_gamma (next_seed t)) in
+  Capsule_prim.Data.create (fun () -> { seed; odd_gamma; intercept = None })
 ;;
 
 let next_int64 t = mix64 (next_seed t)
@@ -120,11 +156,23 @@ let next_int64 t = mix64 (next_seed t)
 (* [perturb] is not from any external source, but provides a way to mix in external
    entropy with a pseudo-random state. *)
 let perturb t salt =
+  (match t.intercept with
+   | None -> ()
+   | Some i ->
+     (match i.on_perturb salt with
+      | None -> ()
+      | Some intercept -> t.intercept <- Some intercept));
   let next = box t.seed + mix64 (Int64.of_int salt) in
   t.seed <- unbox next
 ;;
 
-let bool state = is_odd (next_int64 state)
+let bool_default state = is_odd (next_int64 state)
+
+let bool state =
+  match state.intercept with
+  | None -> bool_default state
+  | Some i -> i.bool state ~default:bool_default
+;;
 
 (* We abuse terminology and refer to individual values as biased or unbiased. More
    properly, what is unbiased is the sampler that results if we keep only these "unbiased"
@@ -158,7 +206,7 @@ let%test_unit "remainder_is_unbiased" =
 (* This implementation of bounded randomness is adapted from [Random.State.int*] in the
    OCaml standard library. The purpose is to use the minimum number of calls to
    [next_int64] to produce a number uniformly chosen within the given range. *)
-let int64 =
+let int64_default =
   let rec between state ~lo ~hi =
     let draw = next_int64 state in
     if lo <= draw && draw <= hi then draw else between state ~lo ~hi
@@ -183,6 +231,17 @@ let int64 =
     else if diff >= 0L
     then non_negative_up_to state diff + lo
     else between state ~lo ~hi
+;;
+
+let int64 state ~lo ~hi =
+  (* Hooks observe valid draws; installing one must not change the public
+     error contract for invalid ranges. [int64_default] keeps the same check
+     for direct delegation through the callback. *)
+  if lo > hi
+  then Error.raise_s [%message "int64: crossed bounds" (lo : int64) (hi : int64)];
+  match state.intercept with
+  | None -> int64_default state ~lo ~hi
+  | Some i -> i.int64 state ~lo ~hi ~default:int64_default
 ;;
 
 let int state ~lo ~hi =
@@ -237,7 +296,13 @@ let%test_unit "unit_float_from_int64" =
   assert (unit_float_from_int64 0xffff_ffff_ffff_ffffL = 1.0 - double_ulp)
 ;;
 
-let unit_float state = unit_float_from_int64 (next_int64 state)
+let unit_float_default state = unit_float_from_int64 (next_int64 state)
+
+let unit_float state =
+  match state.intercept with
+  | None -> unit_float_default state
+  | Some i -> i.unit_float state ~default:unit_float_default
+;;
 
 (* Note about roundoff error:
 
@@ -247,16 +312,20 @@ let unit_float state = unit_float_from_int64 (next_int64 state)
    with [x < 1.] such that [lo +. x *. (hi -. lo) = hi], so it would not be correct to
    document this as being exclusive of [hi].
 *)
-let float =
+let float_default =
+  (* Uses the [_default] internals: when a hook delegates to [default],
+     the fallback must not re-enter the hooks, or a single [float] draw
+     would be observed twice (once whole, once as its internal
+     [unit_float]/[bool] draws). *)
   let rec finite_float state ~lo ~hi =
     let range = hi -. lo in
     if Float.is_finite range
-    then lo +. (unit_float state *. range)
+    then lo +. (unit_float_default state *. range)
     else (
       (* If [hi - lo] is infinite, then [hi + lo] is finite because [hi] and [lo] have
          opposite signs. *)
       let mid = (hi +. lo) /. 2. in
-      if bool state
+      if bool_default state
          (* Depending on rounding, the recursion with [~hi:mid] might be inclusive of
             [mid], which would mean the two cases overlap on [mid]. The alternative is to
             increment or decrement [mid] using [one_ulp] in either of the calls, but then
@@ -273,6 +342,20 @@ let float =
     if Float.( > ) lo hi
     then raise_s [%message "float: bounds are crossed" (lo : float) (hi : float)];
     finite_float state ~lo ~hi
+;;
+
+let float state ~lo ~hi =
+  (* Validate before dispatch for the same reason as [int64]: a callback may
+     choose not to call [default], but it must not make an invalid public draw
+     succeed. *)
+  if not (Float.is_finite lo && Float.is_finite hi)
+  then
+    raise_s [%message "float: bounds are not finite numbers" (lo : float) (hi : float)];
+  if Float.( > ) lo hi
+  then raise_s [%message "float: bounds are crossed" (lo : float) (hi : float)];
+  match state.intercept with
+  | None -> float_default state ~lo ~hi
+  | Some i -> i.float state ~lo ~hi ~default:float_default
 ;;
 
 let%bench_fun "unit_float_from_int64" =
@@ -393,6 +476,144 @@ module Log_uniform = struct
   let int64 = For_int64.log_uniform
   let nativeint = For_nativeint.log_uniform
 end
+
+module Intercept = struct
+  type state = t
+
+  type t = intercept =
+    { int64 :
+        state
+        -> lo:int64
+        -> hi:int64
+        -> default:(state -> lo:int64 -> hi:int64 -> int64)
+        -> int64
+    ; float :
+        state
+        -> lo:float
+        -> hi:float
+        -> default:(state -> lo:float -> hi:float -> float)
+        -> float
+    ; unit_float : state -> default:(state -> float) -> float
+    ; bool : state -> default:(state -> bool) -> bool
+    ; on_split : unit -> t option
+    ; on_perturb : int -> t option
+    }
+
+  let create
+    ?(int64 = fun state ~lo ~hi ~default -> default state ~lo ~hi)
+    ?(float = fun state ~lo ~hi ~default -> default state ~lo ~hi)
+    ?(unit_float = fun state ~default -> default state)
+    ?(bool = fun state ~default -> default state)
+    ?(on_split = fun () -> None)
+    ?(on_perturb = fun _ -> None)
+    ()
+    =
+    { int64; float; unit_float; bool; on_split; on_perturb }
+  ;;
+end
+
+let with_intercept t intercept = { t with intercept = Some intercept }
+
+let%test_unit "intercept observes every bounded draw with its bounds, and the \
+               derived draws delegate through [int64]" =
+  let observed = ref [] in
+  let intercept : Intercept.t =
+    Intercept.create
+      ~int64:
+        (fun state ~lo ~hi ~default ->
+          observed := (lo, hi) :: !observed;
+          default state ~lo ~hi)
+      ()
+  in
+  let state = with_intercept (of_int 1) intercept in
+  let (_ : int) = int state ~lo:3 ~hi:17 in
+  let (_ : Int63.t) = int63 state ~lo:(Int63.of_int 5) ~hi:(Int63.of_int 5) in
+  [%test_result: (int64 * int64) list] !observed ~expect:[ 5L, 5L; 3L, 17L ]
+;;
+
+let%test_unit "intercept can force replayed values through the public API" =
+  let intercept : Intercept.t =
+    Intercept.create
+      ~int64:(fun _ ~lo ~hi:_ ~default:_ -> lo)
+      ~float:(fun _ ~lo ~hi:_ ~default:_ -> lo)
+      ~unit_float:(fun _ ~default:_ -> 0.)
+      ~bool:(fun _ ~default:_ -> false)
+      ()
+  in
+  let state = with_intercept (of_int 1) intercept in
+  [%test_result: int] (int state ~lo:42 ~hi:1000) ~expect:42;
+  [%test_result: bool] (bool state) ~expect:false
+;;
+
+let%test_unit "intercept preserves invalid-bound errors" =
+  let called = ref false in
+  let intercept : Intercept.t =
+    Intercept.create
+      ~int64:(fun _ ~lo ~hi:_ ~default:_ ->
+        called := true;
+        lo)
+      ~float:(fun _ ~lo ~hi:_ ~default:_ ->
+        called := true;
+        lo)
+      ()
+  in
+  let state = with_intercept (of_int 1) intercept in
+  let raises f = match f () with _ -> false | exception _ -> true in
+  [%test_result: bool]
+    (raises (fun () -> int64 state ~lo:1L ~hi:0L))
+    ~expect:true;
+  [%test_result: bool]
+    (raises (fun () -> float state ~lo:1. ~hi:0.))
+    ~expect:true;
+  [%test_result: bool]
+    (raises (fun () -> float state ~lo:0. ~hi:Float.infinity))
+    ~expect:true;
+  [%test_result: bool] !called ~expect:false
+;;
+
+let%test_unit "split-off states receive the observer returned by on_split" =
+  let splits = ref 0 in
+  let rec make_intercept () : Intercept.t =
+    Intercept.create
+      ~int64:(fun _ ~lo ~hi:_ ~default:_ -> lo)
+      ~on_split:(fun () ->
+        Int.incr splits;
+        Some (make_intercept ()))
+      ()
+  in
+  let intercept = make_intercept () in
+  let state = with_intercept (of_int 1) intercept in
+  let child = split state in
+  [%test_result: int] !splits ~expect:1;
+  for _ = 1 to 100 do
+    [%test_result: int] (int child ~lo:7 ~hi:1_000_000) ~expect:7
+  done;
+  let unobserved_child = split (with_intercept (of_int 1) (Intercept.create ())) in
+  let all_forced = ref true in
+  for _ = 1 to 100 do
+    if Int.( <> ) (int unobserved_child ~lo:7 ~hi:1_000_000) 7
+    then all_forced := false
+  done;
+  [%test_result: bool] !all_forced ~expect:false
+;;
+
+let%test_unit "perturb passes the salt and can replace the observer" =
+  let salts = ref [] in
+  let replacement =
+    Intercept.create ~int64:(fun _ ~lo:_ ~hi ~default:_ -> hi) ()
+  in
+  let initial =
+    Intercept.create
+      ~on_perturb:(fun salt ->
+        salts := salt :: !salts;
+        Some replacement)
+      ()
+  in
+  let state = with_intercept (of_int 1) initial in
+  perturb state 42;
+  [%test_result: int list] !salts ~expect:[ 42 ];
+  [%test_result: int] (int state ~lo:7 ~hi:99) ~expect:99
+;;
 
 module State = struct
   type t = state

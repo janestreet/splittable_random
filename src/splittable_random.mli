@@ -49,7 +49,55 @@ val split : t -> t
 (** Like [split], but puts the result into an arbitrary capsule. *)
 val split_into_capsule : t -> (t, 'k) Capsule_prim.Data.t
 
-(** Legacy aliases for the preceding definitions. *)
+(** Interception hooks for property-testing engines that need to observe,
+    record, or replay the stream of bounded draws (for example, choice-tape
+    shrinkers in the style of Python Hypothesis's Conjecture engine).
+
+    A state carrying hooks consults them on each draw, passing the default
+    sampler so the hook can fall back to ordinary sampling; states without
+    hooks (the default, and everything this module constructs itself) behave
+    exactly as before, at the cost of one branch per draw. All bounded
+    integer draws ([int], [int32], [int63], [nativeint], and [Log_uniform])
+    delegate to [int64], so the [int64] hook observes every one of them with
+    its bounds. *)
+module Intercept : sig
+  type state := t
+
+  type t
+
+  (** Constructs an interceptor whose omitted primitive callbacks delegate to
+      their defaults. Omitted [on_split] leaves child states unobserved;
+      omitted [on_perturb] retains the current interceptor. *)
+  val create
+    :  ?int64:
+         (state
+          -> lo:int64
+          -> hi:int64
+          -> default:(state -> lo:int64 -> hi:int64 -> int64)
+          -> int64)
+    -> ?float:
+         (state
+          -> lo:float
+          -> hi:float
+          -> default:(state -> lo:float -> hi:float -> float)
+          -> float)
+    -> ?unit_float:(state -> default:(state -> float) -> float)
+    -> ?bool:(state -> default:(state -> bool) -> bool)
+    -> ?on_split:(unit -> t option)
+    -> ?on_perturb:(int -> t option)
+    -> unit
+    -> t
+end
+
+(** [with_intercept t hooks] returns a snapshot copy of [t] whose draws consult
+    [hooks]; [t] itself is unchanged. [copy] preserves hooks; [split] installs
+    the hooks returned by [on_split] on the new child; [perturb] passes its salt
+    to [on_perturb] and installs any returned replacement hooks. Capsule copies
+    and split children remain hook-free because closures cannot cross capsule
+    boundaries. *)
+val with_intercept : t -> Intercept.t -> t
+
+(** Legacy aliases for the preceding state operations. *)
 module State : sig
   type nonrec t = t
 
