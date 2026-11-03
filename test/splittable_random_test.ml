@@ -244,3 +244,35 @@ module%test [@name "float"] _ = struct
       |}]
   ;;
 end
+
+let%expect_test "unboxed random functions match boxed variants" =
+  let test (type a) (module M : With_equal with type t = a) f1 f2 =
+    let make f =
+      (* We generate from the same state multiple times to make sure not only do we
+         generate the same value, but also each call has the same effect on the state. *)
+      let state = Splittable_random.of_int 0 in
+      List.init 100 ~f:(fun _ -> f state)
+    in
+    let module L = struct
+      type t = M.t list [@@deriving equal, sexp_of]
+    end
+    in
+    require_equal (module L) (make f1) (make f2)
+  in
+  test (module Int32) (Splittable_random.int32 ~lo:(-100l) ~hi:100l) (fun state ->
+    Int32_u.box (Splittable_random.int32_u state ~lo:(-100l) ~hi:100l));
+  [%expect {| |}];
+  test (module Int64) (Splittable_random.int64 ~lo:(-100L) ~hi:100L) (fun state ->
+    Int64_u.box (Splittable_random.int64_u state ~lo:(-100L) ~hi:100L));
+  [%expect {| |}];
+  test (module Nativeint) (Splittable_random.nativeint ~lo:(-100n) ~hi:100n) (fun state ->
+    Nativeint_u.box (Splittable_random.nativeint_u state ~lo:(-100n) ~hi:100n));
+  [%expect {| |}];
+  test (module Float) (Splittable_random.float ~lo:(-100.) ~hi:100.) (fun state ->
+    Float_u.box (Splittable_random.float_u state ~lo:(-100.) ~hi:100.));
+  [%expect {| |}];
+  test (module Float) Splittable_random.unit_float (fun state ->
+    Float_u.box (Splittable_random.unit_float_u state));
+  [%expect {| |}];
+  ()
+;;

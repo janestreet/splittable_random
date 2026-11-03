@@ -15,6 +15,7 @@
     tests, while [Splittable_random] fails some Diehard tests. *)
 
 open! Base
+open Basement.Primitives
 
 type t
 
@@ -49,26 +50,13 @@ val split : t -> t
 (** Like [split], but puts the result into an arbitrary capsule. *)
 val split_into_capsule : t -> (t, 'k) Capsule_prim.Data.t
 
-(** Legacy aliases for the preceding definitions. *)
-module State : sig
-  type nonrec t = t
-
-  val create : Random.State.t -> t
-  val of_int : int -> t
-  val perturb : t -> int -> unit
-  val copy : t -> t
-  val split : t -> t
-end
-[@@deprecated
-  "[since 2023-10] There is no longer any need to use [Splittable_random.State]. Its \
-   definitions are now included directly in [Splittable_random]."]
-
 (** Produces a random, fair boolean. *)
 val bool : t -> bool
 
 (** Produce a random number uniformly distributed in the given inclusive range. (In the
     case of [float], [hi] may or may not be attainable, depending on rounding.) *)
 val int : t -> lo:int -> hi:int -> int
+[@@zero_alloc]
 
 val int32 : t -> lo:int32 -> hi:int32 -> int32
 val int63 : t -> lo:Int63.t -> hi:Int63.t -> Int63.t
@@ -79,6 +67,17 @@ val float : t -> lo:float -> hi:float -> float
 (** [unit_float state = float state ~lo:0. ~hi:1.], but slightly more efficient (and right
     endpoint is exclusive). *)
 val unit_float : t -> float
+
+(** Unboxed counterparts to the above functions. *)
+
+val int32_u : t -> lo:Int32_u.t -> hi:Int32_u.t -> Int32_u.t [@@zero_alloc]
+val int64_u : t -> lo:Int64_u.t -> hi:Int64_u.t -> Int64_u.t [@@zero_alloc]
+
+val nativeint_u : t -> lo:Nativeint_u.t -> hi:Nativeint_u.t -> Nativeint_u.t
+[@@zero_alloc]
+
+val float_u : t -> lo:float -> hi:float -> float [@@zero_alloc]
+val unit_float_u : t -> float [@@zero_alloc]
 
 module Log_uniform : sig
   (** Produce a random number in the given inclusive range, where the number of bits in

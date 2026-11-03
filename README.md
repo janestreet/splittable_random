@@ -1,6 +1,4 @@
-Splittable_random
-=================
-
+# Splittable_random
 PRNG that can be split into independent streams
 
 A splittable pseudo-random number generator (SPRNG) functions like a PRNG in that it can
