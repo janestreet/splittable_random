@@ -17,6 +17,7 @@
     tests, while [Splittable_random] fails some Diehard tests. *)
 
 open! Base
+open Basement.Primitives
 
 type t : value mod portable
 
@@ -28,14 +29,16 @@ type t : value mod portable
     randomized computation and the resulting state should be threaded through. Repeatedly
     creating splittable random states from seeds in the middle of computation can defeat
     the SPRNG's splittable properties. *)
-val create : Random.State.t -> t
+val%template create : Random.State.t -> t @ m
+[@@alloc a @ m = (heap_global, stack_local)]
 
 (** Create a new [t] that will return identical results to any other [t] created with that
     integer. *)
-val of_int : int -> t
+val%template of_int : int -> t @ m
+[@@alloc a @ m = (heap_global, stack_local)] [@@zero_alloc_if_stack a]
 
 (** [perturb t salt] adds the entropy of [salt] to [t]. *)
-val perturb : t -> int -> unit
+val perturb : t @ local -> int -> unit
 
 (** Create a copy of [t] that will return the same random samples as [t]. *)
 val copy : t @ shared -> t
@@ -46,41 +49,40 @@ val copy_into_capsule : t @ shared -> (t, 'k) Capsule_prim.Data.t
 (** [split t] produces a new state that behaves deterministically (i.e. only depending on
     the state of [t]), but pseudo-independently from [t]. This operation mutates [t],
     i.e., [t] will return different values than if this hadn't been called. *)
-val split : t -> t
+val%template split : t -> t @ m
+[@@alloc a @ m = (heap_global, stack_local)]
 
 (** Like [split], but puts the result into an arbitrary capsule. *)
 val split_into_capsule : t -> (t, 'k) Capsule_prim.Data.t
 
-(** Legacy aliases for the preceding definitions. *)
-module State : sig
-  type nonrec t = t
-
-  val create : Random.State.t -> t
-  val of_int : int -> t
-  val perturb : t -> int -> unit
-  val copy : t -> t
-  val split : t -> t
-end
-[@@deprecated
-  "[since 2023-10] There is no longer any need to use [Splittable_random.State]. Its \
-   definitions are now included directly in [Splittable_random]."]
-
 (** Produces a random, fair boolean. *)
-val bool : t -> bool
+val bool : t @ local -> bool
 
 (** Produce a random number uniformly distributed in the given inclusive range. (In the
     case of [float], [hi] may or may not be attainable, depending on rounding.) *)
-val int : t -> lo:int -> hi:int -> int
+val int : t @ local -> lo:int -> hi:int -> int
+[@@zero_alloc]
 
-val int32 : t -> lo:int32 -> hi:int32 -> int32
-val int63 : t -> lo:Int63.t -> hi:Int63.t -> Int63.t
-val int64 : t -> lo:int64 -> hi:int64 -> int64
-val nativeint : t -> lo:nativeint -> hi:nativeint -> nativeint
-val float : t -> lo:float -> hi:float -> float
+val int32 : t @ local -> lo:int32 -> hi:int32 -> int32
+val int63 : t @ local -> lo:Int63.t -> hi:Int63.t -> Int63.t
+val int64 : t @ local -> lo:int64 -> hi:int64 -> int64
+val nativeint : t @ local -> lo:nativeint -> hi:nativeint -> nativeint
+val float : t @ local -> lo:float -> hi:float -> float
 
 (** [unit_float state = float state ~lo:0. ~hi:1.], but slightly more efficient (and right
     endpoint is exclusive). *)
-val unit_float : t -> float
+val unit_float : t @ local -> float
+
+(** Unboxed counterparts to the above functions. *)
+
+val int32_u : t @ local -> lo:Int32_u.t -> hi:Int32_u.t -> Int32_u.t [@@zero_alloc]
+val int64_u : t @ local -> lo:Int64_u.t -> hi:Int64_u.t -> Int64_u.t [@@zero_alloc]
+
+val nativeint_u : t @ local -> lo:Nativeint_u.t -> hi:Nativeint_u.t -> Nativeint_u.t
+[@@zero_alloc]
+
+val float_u : t @ local -> lo:float# -> hi:float# -> float# [@@zero_alloc]
+val unit_float_u : t @ local -> float# [@@zero_alloc]
 
 module Log_uniform : sig
   (** Produce a random number in the given inclusive range, where the number of bits in
@@ -90,10 +92,10 @@ module Log_uniform : sig
 
       These functions are useful for choosing numbers that are weighted low within a given
       range. *)
-  val int : t -> lo:int -> hi:int -> int
+  val int : t @ local -> lo:int -> hi:int -> int
 
-  val int32 : t -> lo:int32 -> hi:int32 -> int32
-  val int63 : t -> lo:Int63.t -> hi:Int63.t -> Int63.t
-  val int64 : t -> lo:int64 -> hi:int64 -> int64
-  val nativeint : t -> lo:nativeint -> hi:nativeint -> nativeint
+  val int32 : t @ local -> lo:int32 -> hi:int32 -> int32
+  val int63 : t @ local -> lo:Int63.t -> hi:Int63.t -> Int63.t
+  val int64 : t @ local -> lo:int64 -> hi:int64 -> int64
+  val nativeint : t @ local -> lo:nativeint -> hi:nativeint -> nativeint
 end

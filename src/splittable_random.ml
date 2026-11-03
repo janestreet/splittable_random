@@ -5,9 +5,7 @@
 
     Our implementation is a port from Java to OCaml of the paper's algorithm. Other than
     the choice of initial seed for [create], our port should be faithful. We have not
-    re-run the DieHarder or BigCrush tests on our implementation. Our port is also not as
-    performant as the original; two factors that hurt us are boxed [int64] values and lack
-    of a POPCNT primitive.
+    re-run the DieHarder or BigCrush tests on our implementation.
 
     (1) http://2014.splashcon.org/event/oopsla2014-fast-splittable-pseudorandom-number-generators
         (also mirrored at http://gee.cs.oswego.edu/dl/papers/oopsla14.pdf)
@@ -22,25 +20,122 @@
 [@@@ocaml.flambda_o3]
 
 open! Base
+open! Basement.Primitives
 
-external box : (int64#[@unboxed]) -> (int64[@local_opt]) @@ portable = "%box_int64"
-external unbox : (int64[@local_opt]) -> (int64#[@unboxed]) @@ portable = "%unbox_int64"
+external box_int32
+  :  (Int32_u.t[@unboxed])
+  -> (int32[@local_opt])
+  @@ portable
+  = "%box_int32"
 
-open Int64.O
+external unbox_int32
+  :  (int32[@local_opt])
+  -> (Int32_u.t[@unboxed])
+  @@ portable
+  = "%unbox_int32"
 
-let is_odd x = x lor 1L = x
-let popcount x = Int64.popcount x
+external box_int64
+  :  (Int64_u.t[@unboxed])
+  -> (int64[@local_opt])
+  @@ portable
+  = "%box_int64"
+
+external unbox_int64
+  :  (int64[@local_opt])
+  -> (Int64_u.t[@unboxed])
+  @@ portable
+  = "%unbox_int64"
+
+external box_nativeint
+  :  (Nativeint_u.t[@unboxed])
+  -> (nativeint[@local_opt])
+  @@ portable
+  = "%box_nativeint"
+
+external unbox_nativeint
+  :  (nativeint[@local_opt])
+  -> (Nativeint_u.t[@unboxed])
+  @@ portable
+  = "%unbox_nativeint"
+
+external box_float : (float#[@unboxed]) -> (float[@local_opt]) @@ portable = "%box_float"
+
+external unbox_float
+  :  (float[@local_opt])
+  -> (float#[@unboxed])
+  @@ portable
+  = "%unbox_float"
+
+(* In OxCaml, the compiler middle-end eliminates the boxes in these helpers. The
+   [zero_alloc] annotations on the exported samplers verify that no boxes escape. *)
+module Int64_u = struct
+  let max_value = unbox_int64 Int64.max_value
+
+  module O = struct
+    let[@inline always] ( + ) x y = unbox_int64 Int64.O.(box_int64 x + box_int64 y)
+    let[@inline always] ( - ) x y = unbox_int64 Int64.O.(box_int64 x - box_int64 y)
+    let[@inline always] ( * ) x y = unbox_int64 Int64.O.(box_int64 x * box_int64 y)
+    let[@inline always] ( = ) x y = Int64.O.(box_int64 x = box_int64 y)
+    let[@inline always] ( < ) x y = Int64.O.(box_int64 x < box_int64 y)
+    let[@inline always] ( > ) x y = Int64.O.(box_int64 x > box_int64 y)
+    let[@inline always] ( <= ) x y = Int64.O.(box_int64 x <= box_int64 y)
+    let[@inline always] ( >= ) x y = Int64.O.(box_int64 x >= box_int64 y)
+    let[@inline always] ( land ) x y = unbox_int64 Int64.O.(box_int64 x land box_int64 y)
+    let[@inline always] ( lor ) x y = unbox_int64 Int64.O.(box_int64 x lor box_int64 y)
+    let[@inline always] ( lxor ) x y = unbox_int64 Int64.O.(box_int64 x lxor box_int64 y)
+    let[@inline always] ( lsr ) x n = unbox_int64 Int64.O.(box_int64 x lsr n)
+  end
+
+  let[@inline always] rem x y = unbox_int64 (Int64.rem (box_int64 x) (box_int64 y))
+  let[@inline always] succ x = O.(x + #1L)
+  let[@inline always] of_int x = unbox_int64 (Int64.of_int x)
+  let[@inline always] of_int32 x = unbox_int64 (Int64.of_int32 (box_int32 x))
+  let[@inline always] of_nativeint x = unbox_int64 (Int64.of_nativeint (box_nativeint x))
+  let[@inline always] to_int_trunc x = Int64.to_int_trunc (box_int64 x)
+  let[@inline always] to_int32_trunc x = unbox_int32 (Int64.to_int32_trunc (box_int64 x))
+
+  let[@inline always] to_nativeint_trunc x =
+    unbox_nativeint (Int64.to_nativeint_trunc (box_int64 x))
+  ;;
+
+  let[@inline always] to_float x = unbox_float (Int64.to_float (box_int64 x))
+end
+
+module Float_u = struct
+  module O = struct
+    let[@inline always] ( + ) x y = unbox_float Float.O.(box_float x + box_float y)
+    let[@inline always] ( - ) x y = unbox_float Float.O.(box_float x - box_float y)
+    let[@inline always] ( * ) x y = unbox_float Float.O.(box_float x * box_float y)
+    let[@inline always] ( / ) x y = unbox_float Float.O.(box_float x / box_float y)
+    let[@inline always] ( > ) x y = Float.O.(box_float x > box_float y)
+  end
+
+  let[@inline always] is_finite x = Float.is_finite (box_float x)
+end
+
+open Int64_u.O
+
+let is_odd x = x lor #1L = x
+let[@inline always] popcount x = unbox_int64 (Int64.popcount (box_int64 x))
 
 type t =
-  { mutable seed : int64#
-  ; odd_gamma : int64#
+  { mutable seed : Basement.Int64_u.t
+  ; odd_gamma : Basement.Int64_u.t
   }
 
 (* Alias used below when [t] is shadowed. *)
 type state = t
 
-let golden_gamma = 0x9e37_79b9_7f4a_7c15L
-let of_int seed = { seed = unbox (Int64.of_int seed); odd_gamma = unbox golden_gamma }
+let golden_gamma = #0x9e37_79b9_7f4a_7c15L
+
+[%%template
+[@@@alloc.default a @ m = (heap_global, stack_local)]
+
+let[@zero_alloc_if_stack a] of_int seed : t @ m =
+  let seed = Int64_u.of_int seed in
+  { seed; odd_gamma = golden_gamma } [@exclave_if_stack a]
+;;]
+
 let copy { seed; odd_gamma } = { seed; odd_gamma }
 
 let copy_into_capsule { seed; odd_gamma } =
@@ -50,19 +145,19 @@ let copy_into_capsule { seed; odd_gamma } =
 let[@inline] mix_bits z n = z lxor (z lsr n)
 
 let[@inline] mix64 z =
-  let z = mix_bits z 33 * 0xff51_afd7_ed55_8ccdL in
-  let z = mix_bits z 33 * 0xc4ce_b9fe_1a85_ec53L in
+  let z = mix_bits z 33 * #0xff51_afd7_ed55_8ccdL in
+  let z = mix_bits z 33 * #0xc4ce_b9fe_1a85_ec53L in
   mix_bits z 33
 ;;
 
 let mix64_variant13 z =
-  let z = mix_bits z 30 * 0xbf58_476d_1ce4_e5b9L in
-  let z = mix_bits z 27 * 0x94d0_49bb_1331_11ebL in
+  let z = mix_bits z 30 * #0xbf58_476d_1ce4_e5b9L in
+  let z = mix_bits z 27 * #0x94d0_49bb_1331_11ebL in
   mix_bits z 31
 ;;
 
 let mix_odd_gamma z =
-  let z = mix64_variant13 z lor 1L in
+  let z = mix64_variant13 z lor #1L in
   let n = popcount (z lxor (z lsr 1)) in
   (* The original paper uses [>=] in the conditional immediately below; however this is a
      typo, and we correct it by using [<]. This was fixed in response to [1] and [2].
@@ -70,44 +165,49 @@ let mix_odd_gamma z =
      [1] https://github.com/janestreet/splittable_random/issues/1
      [2] http://www.pcg-random.org/posts/bugs-in-splitmix.html
   *)
-  if n < 24L then z lxor 0xaaaa_aaaa_aaaa_aaaaL else z
+  if n < #24L then z lxor #0xaaaa_aaaa_aaaa_aaaaL else z
 ;;
 
 let%test_unit "odd gamma" =
   for input = -1_000_000 to 1_000_000 do
-    let output = mix_odd_gamma (Int64.of_int input) in
+    let output = mix_odd_gamma (Int64_u.of_int input) in
     if not (is_odd output)
-    then Error.raise_s [%message "gamma value is not odd" (input : int) (output : int64)]
+    then
+      Error.raise_s
+        [%message "gamma value is not odd" (input : int) (box_int64 output : int64)]
   done
 ;;
 
 let next_seed t =
-  let next = box t.seed + box t.odd_gamma in
-  t.seed <- unbox next;
+  let next = t.seed + t.odd_gamma in
+  t.seed <- next;
   next
 ;;
 
-let of_seed_and_gamma ~seed ~gamma =
+let[@inline] random_int64 random_state =
+  Random.State.int64_incl random_state Int64.min_value Int64.max_value |> unbox_int64
+;;
+
+[%%template
+[@@@alloc.default a @ m = (heap_global, stack_local)]
+
+let of_seed_and_gamma ~seed ~gamma : t @ m =
   let seed = mix64 seed in
   let odd_gamma = mix_odd_gamma gamma in
-  { seed = unbox seed; odd_gamma = unbox odd_gamma }
+  { seed; odd_gamma } [@exclave_if_stack a]
 ;;
 
-let random_int64 random_state =
-  Random.State.int64_incl random_state Int64.min_value Int64.max_value
-;;
-
-let create random_state =
+let create random_state : t @ m =
   let seed = random_int64 random_state in
   let gamma = random_int64 random_state in
-  of_seed_and_gamma ~seed ~gamma
+  (of_seed_and_gamma [@alloc a]) ~seed ~gamma [@exclave_if_local m]
 ;;
 
-let split t =
+let split t : t @ m =
   let seed = next_seed t in
   let gamma = next_seed t in
-  of_seed_and_gamma ~seed ~gamma
-;;
+  (of_seed_and_gamma [@alloc a]) ~seed ~gamma [@exclave_if_local m]
+;;]
 
 let split_into_capsule t =
   let seed = next_seed t in
@@ -120,8 +220,8 @@ let next_int64 t = mix64 (next_seed t)
 (* [perturb] is not from any external source, but provides a way to mix in external
    entropy with a pseudo-random state. *)
 let perturb t salt =
-  let next = box t.seed + mix64 (Int64.of_int salt) in
-  t.seed <- unbox next
+  let next = t.seed + mix64 (Int64_u.of_int salt) in
+  t.seed <- next
 ;;
 
 let bool state = is_odd (next_int64 state)
@@ -129,27 +229,27 @@ let bool state = is_odd (next_int64 state)
 (* We abuse terminology and refer to individual values as biased or unbiased. More
    properly, what is unbiased is the sampler that results if we keep only these "unbiased"
    values. *)
-let remainder_is_unbiased ~draw ~remainder ~draw_maximum ~remainder_maximum =
+let[@inline] remainder_is_unbiased ~draw ~remainder ~draw_maximum ~remainder_maximum =
   draw - remainder <= draw_maximum - remainder_maximum
 ;;
 
 let%test_unit "remainder_is_unbiased" =
   (* choosing a range of 10 values based on a range of 105 values *)
-  let draw_maximum = 104L in
-  let remainder_maximum = 9L in
+  let draw_maximum = #104L in
+  let remainder_maximum = #9L in
   let is_unbiased draw =
-    let remainder = Int64.rem draw (Int64.succ remainder_maximum) in
+    let remainder = Int64_u.rem draw (Int64_u.succ remainder_maximum) in
     remainder_is_unbiased ~draw ~remainder ~draw_maximum ~remainder_maximum
   in
   for i = 0 to 99 do
     [%test_result: bool]
-      (is_unbiased (Int64.of_int i))
+      (is_unbiased (Int64_u.of_int i))
       ~expect:true
       ~message:(Int.to_string i)
   done;
   for i = 100 to 104 do
     [%test_result: bool]
-      (is_unbiased (Int64.of_int i))
+      (is_unbiased (Int64_u.of_int i))
       ~expect:false
       ~message:(Int.to_string i)
   done
@@ -158,62 +258,88 @@ let%test_unit "remainder_is_unbiased" =
 (* This implementation of bounded randomness is adapted from [Random.State.int*] in the
    OCaml standard library. The purpose is to use the minimum number of calls to
    [next_int64] to produce a number uniformly chosen within the given range. *)
-let int64 =
-  let rec between state ~lo ~hi =
-    let draw = next_int64 state in
-    if lo <= draw && draw <= hi then draw else between state ~lo ~hi
-  in
-  let rec non_negative_up_to state maximum =
-    let draw = next_int64 state land Int64.max_value in
-    let remainder = Int64.rem draw (Int64.succ maximum) in
-    if remainder_is_unbiased
-         ~draw
-         ~remainder
-         ~draw_maximum:Int64.max_value
-         ~remainder_maximum:maximum
-    then remainder
-    else non_negative_up_to state maximum
-  in
-  fun state ~lo ~hi ->
-    if lo > hi
-    then Error.raise_s [%message "int64: crossed bounds" (lo : int64) (hi : int64)];
-    let diff = hi - lo in
-    if diff = Int64.max_value
-    then (next_int64 state land Int64.max_value) + lo
-    else if diff >= 0L
-    then non_negative_up_to state diff + lo
-    else between state ~lo ~hi
+let rec int64_u_between state ~lo ~hi =
+  let draw = next_int64 state in
+  if lo <= draw && draw <= hi then draw else int64_u_between state ~lo ~hi
+;;
+
+let rec int64_u_non_negative_up_to state maximum =
+  let draw = next_int64 state land Int64_u.max_value in
+  let remainder = Int64_u.rem draw (Int64_u.succ maximum) in
+  if remainder_is_unbiased
+       ~draw
+       ~remainder
+       ~draw_maximum:Int64_u.max_value
+       ~remainder_maximum:maximum
+  then remainder
+  else int64_u_non_negative_up_to state maximum
+;;
+
+let int64_u state ~lo ~hi =
+  if lo > hi
+  then (
+    let lo = box_int64 lo in
+    let hi = box_int64 hi in
+    Error.raise_s [%message "int64: crossed bounds" (lo : int64) (hi : int64)]);
+  let diff = hi - lo in
+  if diff = Int64_u.max_value
+  then (next_int64 state land Int64_u.max_value) + lo
+  else if diff >= #0L
+  then int64_u_non_negative_up_to state diff + lo
+  else int64_u_between state ~lo ~hi
+[@@zero_alloc]
+;;
+
+let int64 state ~lo ~hi =
+  let lo = unbox_int64 lo in
+  let hi = unbox_int64 hi in
+  box_int64 (int64_u state ~lo ~hi)
 ;;
 
 let int state ~lo ~hi =
-  let lo = Int64.of_int lo in
-  let hi = Int64.of_int hi in
+  let lo = Int64_u.of_int lo in
+  let hi = Int64_u.of_int hi in
   (* truncate unneeded bits *)
-  Int64.to_int_trunc (int64 state ~lo ~hi)
+  Int64_u.to_int_trunc (int64_u state ~lo ~hi)
+[@@zero_alloc]
+;;
+
+let int32_u state ~lo ~hi =
+  let lo = Int64_u.of_int32 lo in
+  let hi = Int64_u.of_int32 hi in
+  (* truncate unneeded bits *)
+  Int64_u.to_int32_trunc (int64_u state ~lo ~hi)
+[@@zero_alloc]
 ;;
 
 let int32 state ~lo ~hi =
-  let lo = Int64.of_int32 lo in
-  let hi = Int64.of_int32 hi in
+  let lo = unbox_int32 lo in
+  let hi = unbox_int32 hi in
+  box_int32 (int32_u state ~lo ~hi)
+;;
+
+let nativeint_u state ~lo ~hi =
+  let lo = Int64_u.of_nativeint lo in
+  let hi = Int64_u.of_nativeint hi in
   (* truncate unneeded bits *)
-  Int64.to_int32_trunc (int64 state ~lo ~hi)
+  Int64_u.to_nativeint_trunc (int64_u state ~lo ~hi)
+[@@zero_alloc]
 ;;
 
 let nativeint state ~lo ~hi =
-  let lo = Int64.of_nativeint lo in
-  let hi = Int64.of_nativeint hi in
-  (* truncate unneeded bits *)
-  Int64.to_nativeint_trunc (int64 state ~lo ~hi)
+  let lo = unbox_nativeint lo in
+  let hi = unbox_nativeint hi in
+  box_nativeint (nativeint_u state ~lo ~hi)
 ;;
 
 let int63 state ~lo ~hi =
-  let lo = Int63.to_int64 lo in
-  let hi = Int63.to_int64 hi in
-  (* truncate unneeded bits *)
-  Int63.of_int64_trunc (int64 state ~lo ~hi)
+  let lo = Int63.to_int64 lo |> unbox_int64 in
+  let hi = Int63.to_int64 hi |> unbox_int64 in
+  Int63.of_int64_trunc (box_int64 (int64_u state ~lo ~hi))
 ;;
 
 let double_ulp = 2. **. -53.
+let double_ulp_u = unbox_float double_ulp
 
 let%test_unit "double_ulp" =
   let open Float.O in
@@ -228,7 +354,11 @@ let%test_unit "double_ulp" =
     assert (1.0 -. (double_ulp /. 2.0) <= 1.0)
 ;;
 
-let unit_float_from_int64 int64 = Int64.to_float (int64 lsr 11) *. double_ulp
+let[@inline] unit_float_from_int64_u int64 =
+  Float_u.O.(Int64_u.to_float (int64 lsr 11) * double_ulp_u)
+;;
+
+let unit_float_from_int64 int64 = box_float (unit_float_from_int64_u (unbox_int64 int64))
 
 let%test_unit "unit_float_from_int64" =
   let open Float.O in
@@ -237,7 +367,11 @@ let%test_unit "unit_float_from_int64" =
   assert (unit_float_from_int64 0xffff_ffff_ffff_ffffL = 1.0 - double_ulp)
 ;;
 
-let unit_float state = unit_float_from_int64 (next_int64 state)
+let[@inline] unit_float_u state = unit_float_from_int64_u (next_int64 state)
+[@@zero_alloc]
+;;
+
+let unit_float state = box_float (unit_float_u state)
 
 (* Note about roundoff error:
 
@@ -247,32 +381,43 @@ let unit_float state = unit_float_from_int64 (next_int64 state)
    with [x < 1.] such that [lo +. x *. (hi -. lo) = hi], so it would not be correct to
    document this as being exclusive of [hi].
 *)
-let float =
-  let rec finite_float state ~lo ~hi =
-    let range = hi -. lo in
-    if Float.is_finite range
-    then lo +. (unit_float state *. range)
-    else (
-      (* If [hi - lo] is infinite, then [hi + lo] is finite because [hi] and [lo] have
-         opposite signs. *)
-      let mid = (hi +. lo) /. 2. in
-      if bool state
-         (* Depending on rounding, the recursion with [~hi:mid] might be inclusive of
-            [mid], which would mean the two cases overlap on [mid]. The alternative is to
-            increment or decrement [mid] using [one_ulp] in either of the calls, but then
-            if the first case is exclusive we leave a "gap" between the two ranges.
-            There's no perfectly uniform solution, so we use the simpler code that does
-            not call [one_ulp]. *)
-      then finite_float state ~lo ~hi:mid
-      else finite_float state ~lo:mid ~hi)
-  in
-  fun state ~lo ~hi ->
-    if not (Float.is_finite lo && Float.is_finite hi)
-    then
-      raise_s [%message "float: bounds are not finite numbers" (lo : float) (hi : float)];
-    if Float.( > ) lo hi
-    then raise_s [%message "float: bounds are crossed" (lo : float) (hi : float)];
-    finite_float state ~lo ~hi
+let rec finite_float_u state ~lo ~hi =
+  let range = Float_u.O.(hi - lo) in
+  if Float_u.is_finite range
+  then Float_u.O.(lo + (unit_float_u state * range))
+  else (
+    (* If [hi - lo] is infinite, then [hi + lo] is finite because [hi] and [lo] have
+       opposite signs. *)
+    let mid = Float_u.O.((hi + lo) / #2.) in
+    if bool state
+       (* Depending on rounding, the recursion with [~hi:mid] might be inclusive of [mid],
+          which would mean the two cases overlap on [mid]. The alternative is to increment
+          or decrement [mid] using [one_ulp] in either of the calls, but then if the first
+          case is exclusive we leave a "gap" between the two ranges. There's no perfectly
+          uniform solution, so we use the simpler code that does not call [one_ulp]. *)
+    then finite_float_u state ~lo ~hi:mid
+    else finite_float_u state ~lo:mid ~hi)
+;;
+
+let float_u state ~lo ~hi =
+  if not (Float_u.is_finite lo && Float_u.is_finite hi)
+  then (
+    let lo = box_float lo in
+    let hi = box_float hi in
+    raise_s [%message "float: bounds are not finite numbers" (lo : float) (hi : float)]);
+  if Float_u.O.(lo > hi)
+  then (
+    let lo = box_float lo in
+    let hi = box_float hi in
+    raise_s [%message "float: bounds are crossed" (lo : float) (hi : float)]);
+  finite_float_u state ~lo ~hi
+[@@zero_alloc]
+;;
+
+let float state ~lo ~hi =
+  let lo = unbox_float lo in
+  let hi = unbox_float hi in
+  box_float (float_u state ~lo ~hi)
 ;;
 
 let%bench_fun "unit_float_from_int64" =
@@ -287,10 +432,10 @@ module Log_uniform = struct
 
       include Int.S with type t := t
 
-      val uniform : state -> lo:t -> hi:t -> t
+      val uniform : state @ local -> lo:t -> hi:t -> t
     end) : sig
     @@ portable
-    val log_uniform : state -> lo:M.t -> hi:M.t -> M.t
+    val log_uniform : state @ local -> lo:M.t -> hi:M.t -> M.t
   end = struct
     open M
 
@@ -394,14 +539,4 @@ module Log_uniform = struct
   let int63 = For_int63.log_uniform
   let int64 = For_int64.log_uniform
   let nativeint = For_nativeint.log_uniform
-end
-
-module State = struct
-  type t = state
-
-  let create = create
-  let of_int = of_int
-  let perturb = perturb
-  let copy = copy
-  let split = split
 end

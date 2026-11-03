@@ -1,5 +1,7 @@
 (library
  (name splittable_random_test)
- (libraries base core expect_test_helpers_core splittable_random)
+ (libraries core expect_test_helpers_core unboxed.float_u unboxed.int32_u
+   unboxed.int64_u unboxed.nativeint_u)
  (preprocess
-  (pps ppx_jane)))
+  (pps ppx_jane -compare-require-explicit-locality
+    -require-template-extension)))

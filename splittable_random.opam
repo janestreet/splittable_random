@@ -13,11 +13,13 @@ build: [
 depends: [
   "ocaml" {>= "5.1.0"}
   "base"
+  "basement"
   "capsule0"
   "ppx_assert"
   "ppx_bench"
   "ppx_inline_test"
   "ppx_sexp_message"
+  "ppx_template"
   "dune"             {>= "3.17.0"}
 ]
 available: arch != "x86_32"

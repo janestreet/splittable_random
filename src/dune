@@ -1,6 +1,7 @@
 (library
  (name splittable_random)
  (public_name splittable_random)
- (libraries base capsule0.prim)
+ (libraries base basement capsule0.prim)
  (preprocess
-  (pps ppx_assert ppx_bench ppx_inline_test ppx_sexp_message)))
+  (pps ppx_assert ppx_bench ppx_inline_test ppx_sexp_message ppx_template
+    -require-template-extension)))
